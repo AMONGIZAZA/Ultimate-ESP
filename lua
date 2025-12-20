@@ -1,10 +1,11 @@
--- LocalScript: Ultimate ESP + Killstreak + Cutscenes (Optimized v14)
+-- LocalScript: Ultimate ESP + Killstreak + Boss Death (v16 - Fixed)
 -- Execute in Command Bar or Executor
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
 local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
@@ -16,11 +17,9 @@ local defaultFOV = camera.FieldOfView
 -- CONFIGURATION & ASSETS
 -------------------------------------------------------------------------
 
--- Performance Settings
-local MAX_RENDER_DISTANCE = 1500 -- Won't update ESP bars beyond this distance
-local BASE_CHECK_INTERVAL = 1 -- Only check base health once per second, not every frame
+local MAX_RENDER_DISTANCE = 1500 
+local BASE_CHECK_INTERVAL = 1 
 
--- Admin/Dev IDs
 local adminIDs = {
     [953755554] = true, [164319242] = true, [3869419288] = true,
     [3432620479] = true, [3205175627] = true, [1268816379] = true,
@@ -31,18 +30,11 @@ local adminIDs = {
     [130064766] = true, [860337027] = true
 }
 
--- Audio IDs
 local SOUNDS = {
     CutsceneText  = "rbxassetid://2048662066",
     RareDeath     = "rbxassetid://129710406245892",
     AdminAlarm    = "rbxassetid://243702801",
     BossSpawn     = {"rbxassetid://8910610321", "rbxassetid://5773338685", "rbxassetid://101569203360944"},
-    BossDeath     = {
-        {id = "rbxassetid://98741471903049", vol = 1, speed = 1},
-        {id = "rbxassetid://8227660256", vol = 1, speed = 1.65},
-        {id = "rbxassetid://75730845492004", vol = 2, speed = 1},
-        {id = "rbxassetid://133014492553616", vol = 3, speed = 1}
-    },
     NormalKill    = {
         "rbxassetid://97113622160405", "rbxassetid://125986071668075", "rbxassetid://103600892072827",
         "rbxassetid://103999634941081", "rbxassetid://80301239006039", "rbxassetid://79299693318576"
@@ -51,7 +43,6 @@ local SOUNDS = {
     BaseRed       = "rbxassetid://8304443672"
 }
 
--- Boss Intro Sounds
 local BOSS_INTRO_SOUNDS = {
     ["Doombringer"] = "rbxassetid://131057316",
     ["Deathbringer"] = "rbxassetid://96482994083151",
@@ -62,7 +53,6 @@ local BOSS_INTRO_SOUNDS = {
     ["DEFAULT"] = "rbxassetid://131057316"
 }
 
--- Image IDs
 local IMAGES = {
     Rare = "8508980536",
     Icon = "60411471", 
@@ -76,25 +66,19 @@ local IMAGES = {
     RedBase = "72257572315634"
 }
 
--- Blacklist (For ESP)
-local ignoredNames = { 
-    ["Red Base"] = true, 
-    ["Blue Base"] = true,
-    ["Tarnished Wall"] = true
-}
+local ignoredNames = { ["Red Base"] = true, ["Blue Base"] = true, ["Tarnished Wall"] = true }
 
--- Bosses with Cutscenes
+-- Bosses that get Cutscenes (Spawn AND Death)
 local cutsceneBosses = {
     ["Doombringer"] = true, ["Deathbringer"] = true, ["Turking"] = true,
     ["Infernus"] = true, ["EXEC"] = true, ["X-TREME"] = true
 }
 
--- State
 local espObjects = {}
 local existingBosses = {}
 local processedBases = {}
--- Optimization: Store base references so we don't search workspace every frame
 local baseCache = {Blue = nil, Red = nil} 
+local savedSoundVolumes = {} 
 
 local isEspToggled = false
 local isKillstreakToggled = false
@@ -121,9 +105,7 @@ local function playSound(id, vol, speed, parent, looped)
     s.Looped = looped or false
     s.Parent = parent or workspace
     s:Play()
-    if not looped then 
-        Debris:AddItem(s, 10) 
-    end
+    if not looped then Debris:AddItem(s, 10) end
     return s
 end
 
@@ -138,19 +120,13 @@ local function makeDraggable(guiObject)
             dragging = true
             dragStart = input.Position
             startPos = guiObject.Position
-            input.Changed:Connect(function() 
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end 
-            end)
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
     end)
     guiObject.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then 
-            dragInput = input 
-        end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
     end)
-    UserInputService.InputChanged:Connect(function(input) 
-        if input == dragInput and dragging then update(input) end 
-    end)
+    UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
 end
 
 local function tweenFade(container, goalTransparency)
@@ -166,18 +142,33 @@ local function tweenFade(container, goalTransparency)
     for _, child in pairs(container:GetDescendants()) do
         if child:IsA("TextLabel") or child:IsA("TextButton") then
             TweenService:Create(child, info, {TextTransparency = goalTransparency}):Play()
-            if child:FindFirstChild("UIStroke") then 
-                TweenService:Create(child.UIStroke, info, {Transparency = goalTransparency}):Play() 
-            end
+            if child:FindFirstChild("UIStroke") then TweenService:Create(child.UIStroke, info, {Transparency = goalTransparency}):Play() end
         elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
             TweenService:Create(child, info, {ImageTransparency = goalTransparency}):Play()
         elseif child:IsA("Frame") and child.Name ~= "FlashOverlay" then
-             if goalTransparency == 1 then 
-                TweenService:Create(child, info, {BackgroundTransparency = 1}):Play()
-             else 
-                TweenService:Create(child, info, {BackgroundTransparency = 0}):Play() 
-             end
+             if goalTransparency == 1 then TweenService:Create(child, info, {BackgroundTransparency = 1}):Play()
+             else TweenService:Create(child, info, {BackgroundTransparency = 0}):Play() end
         end
+    end
+end
+
+local function toggleGlobalMute(mute)
+    if mute then
+        savedSoundVolumes = {}
+        local allSounds = {}
+        for _, s in ipairs(workspace:GetDescendants()) do if s:IsA("Sound") then table.insert(allSounds, s) end end
+        for _, s in ipairs(SoundService:GetDescendants()) do if s:IsA("Sound") then table.insert(allSounds, s) end end
+        for _, sound in ipairs(allSounds) do
+            if sound.Playing and sound.Volume > 0 then
+                savedSoundVolumes[sound] = sound.Volume
+                sound.Volume = 0
+            end
+        end
+    else
+        for sound, vol in pairs(savedSoundVolumes) do
+            if sound and sound.Parent then sound.Volume = vol end
+        end
+        savedSoundVolumes = {}
     end
 end
 
@@ -185,14 +176,33 @@ end
 -- UI SETUP
 -------------------------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UltimateSystem_v14_Opt"
+screenGui.Name = "UltimateSystem_v16"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
--- 1. CUTSCENE UI
+-- DEATH OVERLAY
+local deathFrame = Instance.new("Frame")
+deathFrame.Name = "BossDeathOverlay"
+deathFrame.Size = UDim2.new(1,0,1,0)
+deathFrame.BackgroundColor3 = Color3.new(0,0,0)
+deathFrame.BackgroundTransparency = 1
+deathFrame.ZIndex = 500
+deathFrame.Visible = false
+deathFrame.Parent = screenGui
+
+local deathImage = Instance.new("ImageLabel")
+deathImage.Size = UDim2.new(0,400,0,400)
+deathImage.Position = UDim2.new(0.5,-200,0.5,-200)
+deathImage.BackgroundTransparency = 1
+deathImage.ImageTransparency = 1
+deathImage.ScaleType = Enum.ScaleType.Fit
+deathImage.ZIndex = 501
+deathImage.Parent = deathFrame
+
+-- SPAWN OVERLAY
 local cutsceneFrame = Instance.new("Frame")
-cutsceneFrame.Name = "CutsceneOverlay"
+cutsceneFrame.Name = "SpawnCutsceneOverlay"
 cutsceneFrame.Size = UDim2.new(1,0,1,0)
 cutsceneFrame.BackgroundTransparency = 1
 cutsceneFrame.Visible = false
@@ -213,14 +223,14 @@ listLayout.Padding = UDim.new(0,20)
 listLayout.Parent = textContainer
 
 local cutsceneImage = Instance.new("ImageLabel")
-cutsceneImage.Name = "CutsceneDecal"
+cutsceneImage.Name = "SpawnCutsceneDecal"
 cutsceneImage.Size = UDim2.new(0.4,0,0.6,0)
 cutsceneImage.Position = UDim2.new(1.2,0,0.4,0)
 cutsceneImage.BackgroundTransparency = 1
 cutsceneImage.Visible = false
 cutsceneImage.Parent = cutsceneFrame
 
--- 2. MAIN PANEL
+-- CONTROLS
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0,160,0,100)
 mainFrame.Position = UDim2.new(0,100,0,100)
@@ -268,7 +278,6 @@ ksBtn.Font = Enum.Font.Gotham
 ksBtn.Parent = mainFrame
 Instance.new("UICorner",ksBtn).CornerRadius = UDim.new(0,6)
 
--- 3. RESTORE ICON
 local openBtn = Instance.new("ImageButton")
 openBtn.Size = UDim2.new(0,50,0,50)
 openBtn.Position = UDim2.new(0.5,-25,0,10)
@@ -288,7 +297,7 @@ stroke.Thickness = 3
 stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 stroke.Parent = openBtn
 
--- 4. KILLSTREAK HUD
+-- KILLSTREAK
 local ksFrame = Instance.new("Frame")
 ksFrame.Name = "KillstreakHUD"
 ksFrame.Size = UDim2.new(0,250,0,140)
@@ -340,7 +349,7 @@ lblHighHP.TextScaled = true
 lblHighHP.Text = "Highest HP: None"
 lblHighHP.Parent = ksFrame
 
--- 5. BOSS BAR
+-- BOSS BAR
 local bossContainer = Instance.new("Frame")
 bossContainer.Name = "BossBarContainer"
 bossContainer.Size = UDim2.new(0.4,0,0,80)
@@ -381,7 +390,6 @@ bossHealthText.Font = Enum.Font.GothamBold
 bossHealthText.TextStrokeTransparency = 0.5
 bossHealthText.Parent = bossBg
 
--- 6. RARE DEATH IMAGE
 local rareImage = Instance.new("ImageLabel")
 rareImage.Size = UDim2.new(1,0,1,0)
 rareImage.BackgroundTransparency = 1
@@ -405,20 +413,14 @@ local function createWord(text, color, scale)
     l.AutomaticSize = Enum.AutomaticSize.X
     l.TextTransparency = 1
     l.Parent = textContainer
-    
-    if scale then 
-        l.Size = UDim2.new(0, 0, 1.5, 0) 
-    end
-    
+    if scale then l.Size = UDim2.new(0, 0, 1.5, 0) end
     TweenService:Create(l, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
     return l
 end
 
 local function animateBounce(label)
     TweenService:Create(label, TweenInfo.new(0.1), {Rotation = 10}):Play()
-    task.delay(0.1, function() 
-        TweenService:Create(label, TweenInfo.new(0.1), {Rotation = 0}):Play() 
-    end)
+    task.delay(0.1, function() TweenService:Create(label, TweenInfo.new(0.1), {Rotation = 0}):Play() end)
 end
 
 local function animateShake(label)
@@ -435,7 +437,6 @@ end
 local function animateColorShift(label)
     local running = true
     table.insert(activeRainbowTweens, function() running = false end)
-    
     task.spawn(function()
         local colors = {Color3.fromRGB(255,0,0), Color3.fromRGB(255,165,0), Color3.fromRGB(0,0,0)}
         local i = 1
@@ -457,17 +458,13 @@ local function cleanupCutscene()
     task.wait(1)
     cutsceneFrame.Visible = false
     textContainer.Position = UDim2.new(0, 0, 0.2, 0)
-    for _, c in pairs(textContainer:GetChildren()) do 
-        if c:IsA("TextLabel") then c:Destroy() end 
-    end
+    for _, c in pairs(textContainer:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
 end
 
-local function playCutscene(bossNameVal)
+local function playSpawnCutscene(bossNameVal)
     cutsceneFrame.Visible = true
     cutsceneImage.Visible = false
-    for _, c in pairs(textContainer:GetChildren()) do 
-        if c:IsA("TextLabel") then c:Destroy() end 
-    end
+    for _, c in pairs(textContainer:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
 
     local introId = BOSS_INTRO_SOUNDS[bossNameVal] or BOSS_INTRO_SOUNDS["DEFAULT"]
     local vol = 2
@@ -496,7 +493,6 @@ local function playCutscene(bossNameVal)
         playSound(SOUNDS.CutsceneText, 1, 1); animateBounce(w3)
         task.wait(2)
         cleanupCutscene()
-
     elseif bossNameVal == "Infernus" then
         cutsceneImage.Image = toImage(IMAGES.Infernus)
         cutsceneImage.Visible = true
@@ -509,40 +505,6 @@ local function playCutscene(bossNameVal)
         task.wait(1.5)
         local w3 = createWord("GAMES.", Color3.fromRGB(100, 50, 50)); animateColorShift(w3); playSound(SOUNDS.CutsceneText, 1, 1)
         task.wait(2); cleanupCutscene()
-
-    elseif bossNameVal == "Doombringer" then
-        cutsceneImage.Image = toImage(IMAGES.Doombringer); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
-        TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
-        task.wait(2); createWord("Doom", Color3.fromRGB(150,100,100)); playSound(SOUNDS.CutsceneText,1,1)
-        task.wait(1.5); local w2 = createWord("and", Color3.fromRGB(255,0,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w2)
-        task.wait(1.5); local w3 = createWord("DESPAIR.", Color3.fromRGB(200,0,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w3)
-        TweenService:Create(cutsceneImage, TweenInfo.new(0.3), {Position=UDim2.new(0.25,0,0.4,0)}):Play(); task.wait(0.3)
-        TweenService:Create(cutsceneImage, TweenInfo.new(0.3), {Position=UDim2.new(0.3,0,0.4,0)}):Play(); task.wait(2); cleanupCutscene()
-
-    elseif bossNameVal == "Turking" then
-        cutsceneImage.Image = toImage(IMAGES.Turking); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
-        TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
-        task.wait(2); createWord("It's...", Color3.fromRGB(255,0,0)); playSound(SOUNDS.CutsceneText,1,1)
-        task.wait(1.5); local w2 = createWord("TURKING", Color3.fromRGB(139,69,19)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w2)
-        task.wait(1.5); local w3 = createWord("TIME!", Color3.fromRGB(128,0,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w3)
-        task.wait(2); cleanupCutscene()
-
-    elseif bossNameVal == "EXEC" then
-        cutsceneImage.Image = toImage(IMAGES.EXEC); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
-        TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
-        task.wait(2); createWord("Time", Color3.fromRGB(255,255,0)); playSound(SOUNDS.CutsceneText,1,1)
-        task.wait(1.5); local w2 = createWord("to", Color3.fromRGB(255,165,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w2)
-        task.wait(1.5); local w3 = createWord("HACK!", Color3.fromRGB(0,255,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w3)
-        task.wait(2); cleanupCutscene()
-
-    elseif bossNameVal == "Deathbringer" then
-        cutsceneImage.Image = toImage(IMAGES.Deathbringer); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
-        TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
-        task.wait(2); createWord("YOU..", Color3.fromRGB(128,0,0)); playSound(SOUNDS.CutsceneText,1,1)
-        task.wait(1.5); createWord("WILL..", Color3.fromRGB(60,0,0)); playSound(SOUNDS.CutsceneText,1,1)
-        task.wait(1.5); local w3 = createWord("BURN!", Color3.fromRGB(255,69,0), true); playSound(SOUNDS.CutsceneText,1,1); animateShake(w3)
-        task.wait(2); cleanupCutscene()
-
     else
         createWord(bossNameVal, Color3.new(1,1,1))
         createWord("HAS SPAWNED", Color3.new(1,0,0))
@@ -551,14 +513,32 @@ local function playCutscene(bossNameVal)
     end
 end
 
+-- DEATH CUTSCENE
+local function playDeathCutscene(bossNameVal)
+    deathFrame.Visible = true
+    deathFrame.BackgroundTransparency = 0
+    deathImage.ImageTransparency = 0
+    deathImage.Image = toImage(IMAGES[bossNameVal] or IMAGES.Icon)
+    -- Apply a grey tint to simulate "Black and White" / Death
+    deathImage.ImageColor3 = Color3.new(0.4, 0.4, 0.4) 
+    
+    toggleGlobalMute(true)
+    task.wait(5)
+    
+    local fadeInfo = TweenInfo.new(1.5)
+    TweenService:Create(deathFrame, fadeInfo, {BackgroundTransparency = 1}):Play()
+    TweenService:Create(deathImage, fadeInfo, {ImageTransparency = 1}):Play()
+    
+    toggleGlobalMute(false)
+    task.wait(1.5)
+    deathFrame.Visible = false
+end
+
 -------------------------------------------------------------------------
--- OPTIMIZED BASE EVENT LOGIC
+-- BASE LOGIC
 -------------------------------------------------------------------------
--- New: Find bases once, only retry if they are nil.
 local function locateBases()
     if baseCache.Blue and baseCache.Red then return end
-    
-    -- Heavy scan only if we haven't found them yet
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "Blue's Base" then baseCache.Blue = obj end
         if obj.Name == "Red's Base" then baseCache.Red = obj end
@@ -591,12 +571,8 @@ end
 
 local function scanBases()
     if not isKillstreakToggled then return end
-    
-    -- Throttle checking (only check health once per second)
     if tick() - lastBaseCheckTime < BASE_CHECK_INTERVAL then return end
     lastBaseCheckTime = tick()
-
-    -- Ensure we have references
     locateBases()
 
     local function checkBase(baseObj)
@@ -609,7 +585,6 @@ local function scanBases()
             end
         end
     end
-
     checkBase(baseCache.Blue)
     checkBase(baseCache.Red)
 end
@@ -631,9 +606,7 @@ local function flashHealthBar(barFillFrame)
         Instance.new("UICorner",ov).CornerRadius = UDim.new(0,6)
     end
     TweenService:Create(ov, TweenInfo.new(0.1), {Transparency = 0}):Play()
-    task.delay(0.1, function() 
-        TweenService:Create(ov, TweenInfo.new(0.1), {Transparency = 1}):Play() 
-    end)
+    task.delay(0.1, function() TweenService:Create(ov, TweenInfo.new(0.1), {Transparency = 1}):Play() end)
 end
 
 local function getTorsoColor(char)
@@ -644,40 +617,24 @@ end
 local function handleKill(humanoid)
     totalKills = totalKills + 1
     local now = tick()
-    if now - lastKillTime <= 2 then 
-        currentStreak = currentStreak + 1 
-    else 
-        currentStreak = 1
-        streakSpeed = 1.0 
-    end
-    
-    if currentStreak > 6 then 
-        streakSpeed = streakSpeed + 0.05 
-    end
+    if now - lastKillTime <= 2 then currentStreak = currentStreak + 1 else currentStreak = 1; streakSpeed = 1.0 end
+    if currentStreak > 6 then streakSpeed = streakSpeed + 0.05 end
     
     local isBoss = humanoid.MaxHealth >= 5000
+    local charName = humanoid.Parent and humanoid.Parent.Name or "Unknown"
+
     if isKillstreakToggled then
         if isBoss then 
-            local d = SOUNDS.BossDeath[math.random(1,#SOUNDS.BossDeath)]
-            playSound(d.id, d.vol, d.speed)
+            -- ONLY TRIGGER FOR LISTED BOSSES
+            if cutsceneBosses[charName] then
+                task.spawn(function() playDeathCutscene(charName) end)
+            end
         else 
             local id = SOUNDS.NormalKill[((currentStreak-1)%6)+1]
             playSound(id, 1.5, streakSpeed) 
+            TweenService:Create(camera, TweenInfo.new(0.25), {FieldOfView = math.clamp(defaultFOV*1.5,70,120)}):Play()
+            task.delay(0.25, function() TweenService:Create(camera, TweenInfo.new(0.25), {FieldOfView = defaultFOV}):Play() end)
         end
-        TweenService:Create(camera, TweenInfo.new(0.25), {FieldOfView = math.clamp(defaultFOV*1.5,70,120)}):Play()
-        task.delay(0.25, function() 
-            TweenService:Create(camera, TweenInfo.new(0.25), {FieldOfView = defaultFOV}):Play() 
-        end)
-    end
-    if isBoss and math.random() <= 0.10 then
-        task.spawn(function()
-            rareImage.Image = toImage(IMAGES.Rare)
-            rareImage.Visible = true
-            rareImage.ImageTransparency = 0
-            playSound(SOUNDS.RareDeath,5,1)
-            task.wait(3)
-            TweenService:Create(rareImage, TweenInfo.new(2), {ImageTransparency = 1}):Play()
-        end)
     end
     lastKillTime = now
 end
@@ -686,7 +643,7 @@ local function createESP(humanoid)
     if espObjects[humanoid] then return end
     local char = humanoid.Parent
     if not char or ignoredNames[char.Name] or humanoid.Health<=0 or Players:GetPlayerFromCharacter(char) then return end
-    if humanoid.Health ~= humanoid.Health then return end -- NaN check
+    if humanoid.Health ~= humanoid.Health then return end 
     
     if humanoid.MaxHealth >= 5000 and isKillstreakToggled then 
         local id = SOUNDS.BossSpawn[math.random(1,#SOUNDS.BossSpawn)]
@@ -699,7 +656,7 @@ local function createESP(humanoid)
     bb.StudsOffset = Vector3.new(0,3.5,0)
     bb.AlwaysOnTop = true
     bb.Parent = screenGui
-    bb.Enabled = false -- Start disabled for optimization
+    bb.Enabled = false 
 
     local nm = Instance.new("TextLabel")
     nm.Size = UDim2.new(1,0,0.3,0)
@@ -738,14 +695,11 @@ end
 
 local function removeESP(humanoid) 
     if espObjects[humanoid] then 
-        if espObjects[humanoid].billboard then 
-            espObjects[humanoid].billboard:Destroy() 
-        end
+        if espObjects[humanoid].billboard then espObjects[humanoid].billboard:Destroy() end
         espObjects[humanoid] = nil 
     end 
 end
 
--- INITIAL SCAN (Run once at start)
 task.spawn(function()
     for _, v in ipairs(workspace:GetDescendants()) do 
         if v:IsA("Humanoid") and v.Parent ~= player.Character then createESP(v) end 
@@ -753,46 +707,34 @@ task.spawn(function()
     end 
 end)
 
--- EFFICIENT EVENT-BASED DETECTION (Replaces the lagging loop)
 workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("Humanoid") and isEspToggled and obj.Parent ~= player.Character then
+    if obj:IsA("Humanoid") and obj.Parent ~= player.Character then
         createESP(obj)
     elseif obj:IsA("Model") and cutsceneBosses[obj.Name] then
         local h = obj:WaitForChild("Humanoid", 5)
         if h and not existingBosses[obj] then 
             existingBosses[obj] = true
-            task.spawn(function() playCutscene(obj.Name) end) 
+            task.spawn(function() playSpawnCutscene(obj.Name) end) 
         end 
     end
 end)
 
--- Cleanup routine (runs rarely just to catch errors, instead of every second)
 task.spawn(function()
     while true do
-        task.wait(10) -- Only check every 10 seconds
-        if isEspToggled then
-            for hum, data in pairs(espObjects) do
-                if not hum.Parent then removeESP(hum) end
-            end
+        task.wait(10)
+        for hum, data in pairs(espObjects) do
+            if not hum.Parent then removeESP(hum) end
         end
     end
 end)
-
 
 -------------------------------------------------------------------------
 -- MAIN LOOP
 -------------------------------------------------------------------------
 RunService.RenderStepped:Connect(function()
-    -- Killstreak Logic
-    if tick() - lastKillTime > 2 then 
-        currentStreak = 0
-        streakSpeed = 1.0 
-    end
-    
-    -- Optimized Base Scan
+    if tick() - lastKillTime > 2 then currentStreak = 0; streakSpeed = 1.0 end
     scanBases()
 
-    -- HUD Logic
     if isKillstreakToggled then
         ksFrame.Visible = true
         tweenFade(ksFrame, 0)
@@ -805,19 +747,11 @@ RunService.RenderStepped:Connect(function()
             lblStreakNum.Position = UDim2.new(0, math.sin(tick()*5)*amp, 0.45, math.cos(tick()*6)*amp)
             ksFrame.BackgroundColor3 = Color3.fromRGB(20,20,20):Lerp(Color3.fromRGB(100,0,0), math.clamp(currentStreak/20,0,1))
         else
-            lblStreakNum.Text = ""
-            lblStreakTitle.Visible = false
-            ksFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+            lblStreakNum.Text = ""; lblStreakTitle.Visible = false; ksFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
         end
     else
         tweenFade(ksFrame, 1)
         if ksFrame.BackgroundTransparency >= 0.95 then ksFrame.Visible = false end
-    end
-
-    if not isEspToggled then 
-        bossContainer.Visible = false
-        for _, obj in pairs(espObjects) do obj.billboard.Enabled = false end
-        return 
     end
 
     local hHP = 0
@@ -825,12 +759,9 @@ RunService.RenderStepped:Connect(function()
     local highestHum = nil 
     local camPos = camera.CFrame.Position
 
-    -- ESP Loop (Optimized with Distance Check)
+    -- ESP & DATA LOOP (Runs regardless of toggle for data, but hides visuals if off)
     for hum, obj in pairs(espObjects) do
-        if not hum or not hum.Parent then 
-            removeESP(hum)
-            continue 
-        end
+        if not hum or not hum.Parent then removeESP(hum); continue end
         if hum.Health <= 0 then 
             if not obj.isDead then 
                 obj.isDead = true
@@ -843,35 +774,35 @@ RunService.RenderStepped:Connect(function()
         local char = hum.Parent
         local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
         
-        -- DISTANCE CHECK: If enemy is too far, hide UI and skip math
-        if head then
-            local dist = (head.Position - camPos).Magnitude
-            if dist > MAX_RENDER_DISTANCE then
-                obj.billboard.Enabled = false
-                continue
-            else
-                obj.billboard.Enabled = true
-            end
-        end
-
+        -- Boss Tracking (Always Runs)
         local hp = math.floor(hum.Health)
         local max = math.floor(hum.MaxHealth)
-        
-        -- Track Boss
         if max > hHP then 
             hHP = max
             hName = char.Name
             highestHum = hum 
         end
 
-        -- Update UI only if changed
-        if obj.lastHealth ~= hp then
-            obj.hpText.Text = hp .. " / " .. max
-            TweenService:Create(obj.hpFill, TweenInfo.new(0.3), {Size = UDim2.new(hp/max,0,1,0)}):Play()
-            if obj.lastHealth ~= -1 and hp < obj.lastHealth then 
-                flashHealthBar(obj.hpFill) 
+        -- Visual ESP Update (Only if Toggled)
+        if isEspToggled then
+            if head then
+                local dist = (head.Position - camPos).Magnitude
+                if dist > MAX_RENDER_DISTANCE then
+                    obj.billboard.Enabled = false
+                    continue
+                else
+                    obj.billboard.Enabled = true
+                end
             end
-            obj.lastHealth = hp
+
+            if obj.lastHealth ~= hp then
+                obj.hpText.Text = hp .. " / " .. max
+                TweenService:Create(obj.hpFill, TweenInfo.new(0.3), {Size = UDim2.new(hp/max,0,1,0)}):Play()
+                if obj.lastHealth ~= -1 and hp < obj.lastHealth then flashHealthBar(obj.hpFill) end
+                obj.lastHealth = hp
+            end
+        else
+            obj.billboard.Enabled = false
         end
     end
 
@@ -882,6 +813,7 @@ RunService.RenderStepped:Connect(function()
         lblHighHP.Text = "Highest HP: " .. hName .. " (" .. displayCur .. " / " .. hHP .. ")"
     end
 
+    -- Boss Bar Logic (Fixed: Independent of ESP Toggle)
     local isBoss = highestHum and (highestHum.MaxHealth >= 5000)
     if isBoss then
         bossContainer.Visible = true
@@ -891,37 +823,20 @@ RunService.RenderStepped:Connect(function()
         bossHealthText.Text = cur .. " / " .. max
         TweenService:Create(bossFill, TweenInfo.new(0.3), {Size = UDim2.new(cur/max,0,1,0), BackgroundColor3 = getTorsoColor(highestHum.Parent)}):Play()
         local bossObj = espObjects[highestHum]
-        if bossObj and bossObj.lastHealth ~= -1 and cur < bossObj.lastHealth then 
-            flashHealthBar(bossFill) 
-        end
+        if bossObj and bossObj.lastHealth ~= -1 and cur < bossObj.lastHealth then flashHealthBar(bossFill) end
     else
         tweenFade(bossContainer, 1)
         if bossBg.BackgroundTransparency >= 0.95 then bossContainer.Visible = false end
     end
 end)
 
-minBtn.MouseButton1Click:Connect(function() 
-    mainFrame.Visible = false
-    openBtn.Visible = true 
-end)
-
-openBtn.MouseButton1Click:Connect(function() 
-    mainFrame.Visible = true
-    openBtn.Visible = false 
-end)
+minBtn.MouseButton1Click:Connect(function() mainFrame.Visible = false; openBtn.Visible = true end)
+openBtn.MouseButton1Click:Connect(function() mainFrame.Visible = true; openBtn.Visible = false end)
 
 espBtn.MouseButton1Click:Connect(function() 
     isEspToggled = not isEspToggled
     espBtn.Text = isEspToggled and "ESP: ON" or "ESP: OFF"
     espBtn.BackgroundColor3 = isEspToggled and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
-    if not isEspToggled then 
-        for h,_ in pairs(espObjects) do removeESP(h) end
-        espObjects = {} 
-        -- Trigger a fresh scan when turned back on
-        for _, v in ipairs(workspace:GetDescendants()) do 
-            if v:IsA("Humanoid") and v.Parent ~= player.Character then createESP(v) end 
-        end
-    end 
 end)
 
 ksBtn.MouseButton1Click:Connect(function() 
@@ -939,7 +854,6 @@ local function checkAdmin(plr)
         wf.BackgroundTransparency = 0.85
         wf.Parent = screenGui
         Instance.new("UICorner",wf).CornerRadius = UDim.new(0,10)
-
         local wt = Instance.new("TextLabel")
         wt.Size = UDim2.new(0.9,0,0.6,0)
         wt.Position = UDim2.new(0.05,0,0.05,0)
@@ -949,48 +863,32 @@ local function checkAdmin(plr)
         wt.TextScaled = true
         wt.Font = Enum.Font.GothamBlack
         wt.Parent = wf
-
         local b1 = Instance.new("TextButton")
         b1.Size = UDim2.new(0.4,0,0.2,0)
         b1.Position = UDim2.new(0.05,0,0.75,0)
         b1.Text = "Ok"
         b1.BackgroundColor3 = Color3.new(0,1,0)
         b1.Parent = wf
-
         local b2 = Instance.new("TextButton")
         b2.Size = UDim2.new(0.4,0,0.2,0)
         b2.Position = UDim2.new(0.55,0,0.75,0)
         b2.Text = "Kick Me"
         b2.BackgroundColor3 = Color3.new(1,0,0)
         b2.Parent = wf
-
         local alarm = playSound(SOUNDS.AdminAlarm, 2, 1, workspace, true)
         local f = true
-        
         task.spawn(function() 
             while f and wf.Parent do 
-                wt.TextColor3 = Color3.new(1,0,0)
-                task.wait(2)
-                wt.TextColor3 = Color3.new(1,1,0)
-                task.wait(0.5) 
+                wt.TextColor3 = Color3.new(1,0,0); task.wait(2)
+                wt.TextColor3 = Color3.new(1,1,0); task.wait(0.5) 
             end 
         end)
-        
-        b1.MouseButton1Click:Connect(function() 
-            f = false
-            if alarm then alarm:Destroy() end
-            wf:Destroy() 
-        end)
-        
-        b2.MouseButton1Click:Connect(function() 
-            player:Kick("Agreed") 
-        end)
+        b1.MouseButton1Click:Connect(function() f = false; if alarm then alarm:Destroy() end; wf:Destroy() end)
+        b2.MouseButton1Click:Connect(function() player:Kick("Agreed") end)
     end 
 end
 
-for _,p in ipairs(Players:GetPlayers()) do 
-    if p ~= player then checkAdmin(p) end 
-end
+for _,p in ipairs(Players:GetPlayers()) do if p ~= player then checkAdmin(p) end end
 Players.PlayerAdded:Connect(checkAdmin)
 
     end 
