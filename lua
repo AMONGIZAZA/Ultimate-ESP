@@ -1,4 +1,4 @@
--- LocalScript: Ultimate ESP + Killstreak + Cutscenes + Infernus Update (v13 FIXED)
+-- LocalScript: Ultimate ESP + Killstreak + Cutscenes (Optimized v14)
 -- Execute in Command Bar or Executor
 
 local Players = game:GetService("Players")
@@ -15,6 +15,10 @@ local defaultFOV = camera.FieldOfView
 -------------------------------------------------------------------------
 -- CONFIGURATION & ASSETS
 -------------------------------------------------------------------------
+
+-- Performance Settings
+local MAX_RENDER_DISTANCE = 1500 -- Won't update ESP bars beyond this distance
+local BASE_CHECK_INTERVAL = 1 -- Only check base health once per second, not every frame
 
 -- Admin/Dev IDs
 local adminIDs = {
@@ -50,24 +54,24 @@ local SOUNDS = {
 -- Boss Intro Sounds
 local BOSS_INTRO_SOUNDS = {
     ["Doombringer"] = "rbxassetid://131057316",
-    ["Deathbringer"] = "rbxassetid://96482994083151",
+    ["Deathbringer"] = "rbxassetid://82507792119454",
     ["Turking"] = "rbxassetid://97538785569799",
     ["EXEC"] = "rbxassetid://75810075829808",
-    ["Infernus"] = "rbxassetid://112715817083992",
-    ["X-TREME"] = "rbxassetid://18519134957",
+    ["Infernus"] = "rbxassetid://14384858049",
+    ["X-TREME"] = "rbxassetid://16806957815",
     ["DEFAULT"] = "rbxassetid://131057316"
 }
 
--- Image IDs (Raw IDs)
+-- Image IDs
 local IMAGES = {
     Rare = "8508980536",
     Icon = "60411471", 
     Doombringer = "16952823463", 
     Turking = "14384855375", 
     EXEC = "16806958739",
-    Deathbringer = "82507792119454",
-    Infernus = "14384858049",
-    ["X-TREME"] = "16806957815",
+    Deathbringer = "17824322901",
+    Infernus = "17824323726", 
+    ["X-TREME"] = "17824323726", 
     BlueBase = "84091694732791",
     RedBase = "72257572315634"
 }
@@ -76,8 +80,6 @@ local IMAGES = {
 local ignoredNames = { 
     ["Red Base"] = true, 
     ["Blue Base"] = true,
-    ["Red's Base"] = true, 
-    ["Blue's Base"] = true, 
     ["Tarnished Wall"] = true
 }
 
@@ -90,14 +92,18 @@ local cutsceneBosses = {
 -- State
 local espObjects = {}
 local existingBosses = {}
-local processedBases = {} 
+local processedBases = {}
+-- Optimization: Store base references so we don't search workspace every frame
+local baseCache = {Blue = nil, Red = nil} 
+
 local isEspToggled = false
 local isKillstreakToggled = false
 local totalKills = 0
 local currentStreak = 0
 local streakSpeed = 1.0
 local lastKillTime = 0
-local activeRainbowTweens = {} -- Store Infernus text tweens
+local lastBaseCheckTime = 0
+local activeRainbowTweens = {} 
 
 -------------------------------------------------------------------------
 -- UTILITIES
@@ -179,7 +185,7 @@ end
 -- UI SETUP
 -------------------------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UltimateSystem_v13"
+screenGui.Name = "UltimateSystem_v14_Opt"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
@@ -427,7 +433,6 @@ local function animateShake(label)
 end
 
 local function animateColorShift(label)
-    -- Looping color shift: Red -> Orange -> Black
     local running = true
     table.insert(activeRainbowTweens, function() running = false end)
     
@@ -444,92 +449,54 @@ local function animateColorShift(label)
 end
 
 local function cleanupCutscene()
-    -- Stop special animations
     for _, stopFunc in pairs(activeRainbowTweens) do stopFunc() end
     activeRainbowTweens = {}
-
     local slide = TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.In)
     TweenService:Create(textContainer, slide, {Position = UDim2.new(-1, 0, 0.2, 0)}):Play()
     TweenService:Create(cutsceneImage, slide, {Position = UDim2.new(-1, 0, 0.4, 0)}):Play()
-    
     task.wait(1)
-    
     cutsceneFrame.Visible = false
     textContainer.Position = UDim2.new(0, 0, 0.2, 0)
-    
     for _, c in pairs(textContainer:GetChildren()) do 
         if c:IsA("TextLabel") then c:Destroy() end 
     end
 end
 
 local function playCutscene(bossNameVal)
-    -- Reset UI
     cutsceneFrame.Visible = true
     cutsceneImage.Visible = false
     for _, c in pairs(textContainer:GetChildren()) do 
         if c:IsA("TextLabel") then c:Destroy() end 
     end
 
-    -- Audio Setup
     local introId = BOSS_INTRO_SOUNDS[bossNameVal] or BOSS_INTRO_SOUNDS["DEFAULT"]
     local vol = 2
     if bossNameVal == "Infernus" then vol = 4 end
-    
     local speed = 1
     if bossNameVal == "Deathbringer" then speed = 0.85 end
-    
     playSound(introId, vol, speed)
 
-    -------------------------------------------------------------------------
-    -- X-TREME CUTSCENE (New)
-    -------------------------------------------------------------------------
     if bossNameVal == "X-TREME" then
-        -- 1. Setup Image
         local imgId = IMAGES["X-TREME"] or IMAGES.Icon
         cutsceneImage.Image = toImage(imgId)
         cutsceneImage.Visible = true
         cutsceneImage.Position = UDim2.new(1.2, 0, 0.4, 0)
-        
-        -- Slide in
         TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.3, 0, 0.4, 0)}):Play()
         task.wait(2)
-
-        -- 2. Word 1: OFFENSE (Yellow Text, Black Outline)
-        local w1 = createWord("OFFENSE", Color3.fromRGB(255, 255, 0)) -- Bright Yellow
-        local s1 = Instance.new("UIStroke")
-        s1.Thickness = 3
-        s1.Color = Color3.new(0,0,0)
-        s1.Parent = w1
+        local w1 = createWord("OFFENSE", Color3.fromRGB(255, 255, 0))
+        local s1 = Instance.new("UIStroke"); s1.Thickness = 3; s1.Color = Color3.new(0,0,0); s1.Parent = w1
         playSound(SOUNDS.CutsceneText, 1, 1)
-        
         task.wait(1.5)
-
-        -- 3. Word 2: MODE (Dark Yellow Text, Black Outline)
-        local w2 = createWord("MODE", Color3.fromRGB(180, 180, 0)) -- Dark Yellow
-        local s2 = Instance.new("UIStroke")
-        s2.Thickness = 3
-        s2.Color = Color3.new(0,0,0)
-        s2.Parent = w2
-        playSound(SOUNDS.CutsceneText, 1, 1)
-        animateBounce(w2)
-
+        local w2 = createWord("MODE", Color3.fromRGB(180, 180, 0))
+        local s2 = Instance.new("UIStroke"); s2.Thickness = 3; s2.Color = Color3.new(0,0,0); s2.Parent = w2
+        playSound(SOUNDS.CutsceneText, 1, 1); animateBounce(w2)
         task.wait(1.5)
-
-        -- 4. Word 3: ON. (Black Text, Yellow Outline)
-        local w3 = createWord("ON.", Color3.new(0,0,0)) -- Black Text
-        local s3 = Instance.new("UIStroke")
-        s3.Thickness = 3
-        s3.Color = Color3.fromRGB(255, 255, 0) -- Yellow Stroke
-        s3.Parent = w3
-        playSound(SOUNDS.CutsceneText, 1, 1)
-        animateBounce(w3)
-
+        local w3 = createWord("ON.", Color3.new(0,0,0))
+        local s3 = Instance.new("UIStroke"); s3.Thickness = 3; s3.Color = Color3.fromRGB(255, 255, 0); s3.Parent = w3
+        playSound(SOUNDS.CutsceneText, 1, 1); animateBounce(w3)
         task.wait(2)
         cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- INFERNUS CUTSCENE
-    -------------------------------------------------------------------------
     elseif bossNameVal == "Infernus" then
         cutsceneImage.Image = toImage(IMAGES.Infernus)
         cutsceneImage.Visible = true
@@ -543,9 +510,6 @@ local function playCutscene(bossNameVal)
         local w3 = createWord("GAMES.", Color3.fromRGB(100, 50, 50)); animateColorShift(w3); playSound(SOUNDS.CutsceneText, 1, 1)
         task.wait(2); cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- DOOMBRINGER
-    -------------------------------------------------------------------------
     elseif bossNameVal == "Doombringer" then
         cutsceneImage.Image = toImage(IMAGES.Doombringer); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
         TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
@@ -555,9 +519,6 @@ local function playCutscene(bossNameVal)
         TweenService:Create(cutsceneImage, TweenInfo.new(0.3), {Position=UDim2.new(0.25,0,0.4,0)}):Play(); task.wait(0.3)
         TweenService:Create(cutsceneImage, TweenInfo.new(0.3), {Position=UDim2.new(0.3,0,0.4,0)}):Play(); task.wait(2); cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- TURKING
-    -------------------------------------------------------------------------
     elseif bossNameVal == "Turking" then
         cutsceneImage.Image = toImage(IMAGES.Turking); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
         TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
@@ -566,9 +527,6 @@ local function playCutscene(bossNameVal)
         task.wait(1.5); local w3 = createWord("TIME!", Color3.fromRGB(128,0,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w3)
         task.wait(2); cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- EXEC
-    -------------------------------------------------------------------------
     elseif bossNameVal == "EXEC" then
         cutsceneImage.Image = toImage(IMAGES.EXEC); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
         TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
@@ -577,9 +535,6 @@ local function playCutscene(bossNameVal)
         task.wait(1.5); local w3 = createWord("HACK!", Color3.fromRGB(0,255,0)); playSound(SOUNDS.CutsceneText,1,1); animateBounce(w3)
         task.wait(2); cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- DEATHBRINGER
-    -------------------------------------------------------------------------
     elseif bossNameVal == "Deathbringer" then
         cutsceneImage.Image = toImage(IMAGES.Deathbringer); cutsceneImage.Visible=true; cutsceneImage.Position=UDim2.new(1.2,0,0.4,0)
         TweenService:Create(cutsceneImage, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position=UDim2.new(0.3,0,0.4,0)}):Play()
@@ -588,9 +543,6 @@ local function playCutscene(bossNameVal)
         task.wait(1.5); local w3 = createWord("BURN!", Color3.fromRGB(255,69,0), true); playSound(SOUNDS.CutsceneText,1,1); animateShake(w3)
         task.wait(2); cleanupCutscene()
 
-    -------------------------------------------------------------------------
-    -- GENERIC / OTHER
-    -------------------------------------------------------------------------
     else
         createWord(bossNameVal, Color3.new(1,1,1))
         createWord("HAS SPAWNED", Color3.new(1,0,0))
@@ -600,8 +552,19 @@ local function playCutscene(bossNameVal)
 end
 
 -------------------------------------------------------------------------
--- BASE EVENT LOGIC
+-- OPTIMIZED BASE EVENT LOGIC
 -------------------------------------------------------------------------
+-- New: Find bases once, only retry if they are nil.
+local function locateBases()
+    if baseCache.Blue and baseCache.Red then return end
+    
+    -- Heavy scan only if we haven't found them yet
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Blue's Base" then baseCache.Blue = obj end
+        if obj.Name == "Red's Base" then baseCache.Red = obj end
+    end
+end
+
 local function triggerBaseEvent(baseName)
     if processedBases[baseName] then return end
     processedBases[baseName] = true
@@ -628,20 +591,31 @@ end
 
 local function scanBases()
     if not isKillstreakToggled then return end
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if (obj.Name == "Blue's Base" or obj.Name == "Red's Base") and obj:FindFirstChild("Humanoid") then
-            local hum = obj.Humanoid
-            if hum.Health <= 1 and hum.Health >= 0 and not processedBases[obj.Name] then
-                task.spawn(function() triggerBaseEvent(obj.Name) end)
+    
+    -- Throttle checking (only check health once per second)
+    if tick() - lastBaseCheckTime < BASE_CHECK_INTERVAL then return end
+    lastBaseCheckTime = tick()
+
+    -- Ensure we have references
+    locateBases()
+
+    local function checkBase(baseObj)
+        if baseObj and baseObj:FindFirstChild("Humanoid") then
+            local hum = baseObj.Humanoid
+            if hum.Health <= 1 and hum.Health >= 0 and not processedBases[baseObj.Name] then
+                task.spawn(function() triggerBaseEvent(baseObj.Name) end)
             elseif hum.Health > 1 then
-                processedBases[obj.Name] = false
+                processedBases[baseObj.Name] = false
             end
         end
     end
+
+    checkBase(baseCache.Blue)
+    checkBase(baseCache.Red)
 end
 
 -------------------------------------------------------------------------
--- FLASH LOGIC
+-- KILL & ESP LOGIC
 -------------------------------------------------------------------------
 local function flashHealthBar(barFillFrame)
     if not barFillFrame then return end
@@ -711,7 +685,8 @@ end
 local function createESP(humanoid)
     if espObjects[humanoid] then return end
     local char = humanoid.Parent
-    if not char or ignoredNames[char.Name] or humanoid.Health<=0 or Players:GetPlayerFromCharacter(char) or (humanoid.Health~=humanoid.Health) then return end
+    if not char or ignoredNames[char.Name] or humanoid.Health<=0 or Players:GetPlayerFromCharacter(char) then return end
+    if humanoid.Health ~= humanoid.Health then return end -- NaN check
     
     if humanoid.MaxHealth >= 5000 and isKillstreakToggled then 
         local id = SOUNDS.BossSpawn[math.random(1,#SOUNDS.BossSpawn)]
@@ -719,11 +694,12 @@ local function createESP(humanoid)
     end
     
     local bb = Instance.new("BillboardGui")
-    bb.Adornee = char:FindFirstChild("Head")
+    bb.Adornee = char:FindFirstChild("Head") or char:FindFirstChild("Torso")
     bb.Size = UDim2.new(0,120,0,50)
     bb.StudsOffset = Vector3.new(0,3.5,0)
     bb.AlwaysOnTop = true
     bb.Parent = screenGui
+    bb.Enabled = false -- Start disabled for optimization
 
     local nm = Instance.new("TextLabel")
     nm.Size = UDim2.new(1,0,0.3,0)
@@ -769,32 +745,54 @@ local function removeESP(humanoid)
     end 
 end
 
-for _, obj in ipairs(workspace:GetDescendants()) do 
-    if obj:IsA("Model") and cutsceneBosses[obj.Name] and obj:FindFirstChild("Humanoid") then 
-        existingBosses[obj] = true 
+-- INITIAL SCAN (Run once at start)
+task.spawn(function()
+    for _, v in ipairs(workspace:GetDescendants()) do 
+        if v:IsA("Humanoid") and v.Parent ~= player.Character then createESP(v) end 
+        if v:IsA("Model") and cutsceneBosses[v.Name] and v:FindFirstChild("Humanoid") then existingBosses[v] = true end
     end 
-end
+end)
 
-workspace.DescendantAdded:Connect(function(obj) 
-    if obj:IsA("Model") and cutsceneBosses[obj.Name] then 
-        local h = obj:WaitForChild("Humanoid", 5) 
+-- EFFICIENT EVENT-BASED DETECTION (Replaces the lagging loop)
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Humanoid") and isEspToggled and obj.Parent ~= player.Character then
+        createESP(obj)
+    elseif obj:IsA("Model") and cutsceneBosses[obj.Name] then
+        local h = obj:WaitForChild("Humanoid", 5)
         if h and not existingBosses[obj] then 
             existingBosses[obj] = true
             task.spawn(function() playCutscene(obj.Name) end) 
         end 
-    end 
+    end
 end)
+
+-- Cleanup routine (runs rarely just to catch errors, instead of every second)
+task.spawn(function()
+    while true do
+        task.wait(10) -- Only check every 10 seconds
+        if isEspToggled then
+            for hum, data in pairs(espObjects) do
+                if not hum.Parent then removeESP(hum) end
+            end
+        end
+    end
+end)
+
 
 -------------------------------------------------------------------------
 -- MAIN LOOP
 -------------------------------------------------------------------------
 RunService.RenderStepped:Connect(function()
+    -- Killstreak Logic
     if tick() - lastKillTime > 2 then 
         currentStreak = 0
         streakSpeed = 1.0 
     end
+    
+    -- Optimized Base Scan
     scanBases()
 
+    -- HUD Logic
     if isKillstreakToggled then
         ksFrame.Visible = true
         tweenFade(ksFrame, 0)
@@ -818,13 +816,16 @@ RunService.RenderStepped:Connect(function()
 
     if not isEspToggled then 
         bossContainer.Visible = false
+        for _, obj in pairs(espObjects) do obj.billboard.Enabled = false end
         return 
     end
 
     local hHP = 0
     local hName = "None"
     local highestHum = nil 
+    local camPos = camera.CFrame.Position
 
+    -- ESP Loop (Optimized with Distance Check)
     for hum, obj in pairs(espObjects) do
         if not hum or not hum.Parent then 
             removeESP(hum)
@@ -839,25 +840,38 @@ RunService.RenderStepped:Connect(function()
             continue 
         end
 
+        local char = hum.Parent
+        local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+        
+        -- DISTANCE CHECK: If enemy is too far, hide UI and skip math
+        if head then
+            local dist = (head.Position - camPos).Magnitude
+            if dist > MAX_RENDER_DISTANCE then
+                obj.billboard.Enabled = false
+                continue
+            else
+                obj.billboard.Enabled = true
+            end
+        end
+
         local hp = math.floor(hum.Health)
         local max = math.floor(hum.MaxHealth)
-        local char = hum.Parent
+        
+        -- Track Boss
         if max > hHP then 
             hHP = max
             hName = char.Name
             highestHum = hum 
         end
 
-        if hum.RootPart then
+        -- Update UI only if changed
+        if obj.lastHealth ~= hp then
             obj.hpText.Text = hp .. " / " .. max
+            TweenService:Create(obj.hpFill, TweenInfo.new(0.3), {Size = UDim2.new(hp/max,0,1,0)}):Play()
             if obj.lastHealth ~= -1 and hp < obj.lastHealth then 
                 flashHealthBar(obj.hpFill) 
             end
-            if obj.lastHealth ~= hp then 
-                TweenService:Create(obj.hpFill, TweenInfo.new(0.3), {Size = UDim2.new(hp/max,0,1,0), BackgroundColor3 = getTorsoColor(char)}):Play()
-                obj.lastHealth = hp 
-            end
-            obj.billboard.Enabled = true
+            obj.lastHealth = hp
         end
     end
 
@@ -886,19 +900,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-task.spawn(function() 
-    while true do 
-        if isEspToggled then 
-            for _,v in ipairs(workspace:GetDescendants()) do 
-                if v:IsA("Humanoid") and v.Parent ~= player.Character then 
-                    createESP(v) 
-                end 
-            end 
-        end
-        task.wait(1) 
-    end 
-end)
-
 minBtn.MouseButton1Click:Connect(function() 
     mainFrame.Visible = false
     openBtn.Visible = true 
@@ -916,6 +917,10 @@ espBtn.MouseButton1Click:Connect(function()
     if not isEspToggled then 
         for h,_ in pairs(espObjects) do removeESP(h) end
         espObjects = {} 
+        -- Trigger a fresh scan when turned back on
+        for _, v in ipairs(workspace:GetDescendants()) do 
+            if v:IsA("Humanoid") and v.Parent ~= player.Character then createESP(v) end 
+        end
     end 
 end)
 
@@ -983,7 +988,6 @@ local function checkAdmin(plr)
     end 
 end
 
--- IMMEDIATE CHECK + LOOP
 for _,p in ipairs(Players:GetPlayers()) do 
     if p ~= player then checkAdmin(p) end 
 end
