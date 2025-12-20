@@ -59,7 +59,7 @@ local BOSS_INTRO_SOUNDS = {
     ["EXEC"] = "rbxassetid://75810075829808",
     ["Infernus"] = "rbxassetid://14384858049",
     ["X-TREME"] = "rbxassetid://16806957815",
-    ["DEFAULT"] = "rbxassetid://131057316"
+    ["DEFAULT"] = "rbxassetid://7588343260"
 }
 
 -- Image IDs
