@@ -80,6 +80,8 @@ local IMAGES = {
 local ignoredNames = { 
     ["Red Base"] = true, 
     ["Blue Base"] = true,
+    ["Red's Base"] = true,
+    ["Blue's Base"] = true,
     ["Tarnished Wall"] = true
 }
 
