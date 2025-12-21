@@ -82,6 +82,8 @@ local ignoredNames = {
     ["Blue Base"] = true,
     ["Red's Base"] = true,
     ["Blue's Base"] = true,
+    ["Sad Statue"] = true,
+    ["Happy Statue"] = true,
     ["Tarnished Wall"] = true
 }
 
