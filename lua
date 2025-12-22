@@ -69,9 +69,9 @@ local IMAGES = {
     Doombringer = "16952823463", 
     Turking = "14384855375", 
     EXEC = "16806958739",
-    Deathbringer = "17824322901",
-    Infernus = "17824323726", 
-    ["X-TREME"] = "17824323726", 
+    Deathbringer = "82507792119454",
+    Infernus = "14384858049",
+    ["X-TREME"] = "16806957815",
     BlueBase = "84091694732791",
     RedBase = "72257572315634"
 }
