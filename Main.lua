@@ -155,7 +155,7 @@ BtnCorner.Parent = ToggleBtn
 
 -- Credits
 local Creds = Instance.new("TextLabel")
-Creds.Text = "Physics-Based & Dynamic Stamina"
+Creds.Text = "Forsaken Stamina tracker update [BETA]"
 Creds.Size = UDim2.new(1, 0, 0, 20)
 Creds.Position = UDim2.new(0, 0, 0.85, 0)
 Creds.BackgroundTransparency = 1
