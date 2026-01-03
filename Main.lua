@@ -23,7 +23,7 @@ local DELAY_NORMAL = 1            -- Delay before regen normally
 local DELAY_EXHAUSTED = 2         -- Delay if stamina hits 0
 
 -- Speed Thresholds (Must be STRICTLY greater than these to drain)
-local DEFAULT_SPEED_LOW_HP = 12.1 
+local DEFAULT_SPEED_LOW_HP = 12.5 
 local DEFAULT_SPEED_HIGH_HP = 12.000001
 
 -- Specific HP Lookups (MaxHealth -> Drain Speed)
