@@ -19,7 +19,7 @@ local HIGHLIGHT_LIMIT = 30
 -- Stamina Config
 local STAMINA_DRAIN_RATE = 10     -- Drains 10 per second
 local STAMINA_REGEN_RATE = 20     -- Regens 20 per second
-local DELAY_NORMAL = 1            -- Delay before regen normally
+local DELAY_NORMAL = 0.2            -- Delay before regen normally
 local DELAY_EXHAUSTED = 1.85         -- Delay if stamina hits 0
 
 -- Speed Thresholds (Must be STRICTLY greater than these to drain)
