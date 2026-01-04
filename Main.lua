@@ -15,24 +15,25 @@ local Camera = Workspace.CurrentCamera
 local MAX_DISTANCE = 2500
 local HP_THRESHOLD = 200
 local HIGHLIGHT_LIMIT = 30 
-local PROXIMITY_CHECK_RANGE = 80 -- Killers only drain stamina if Survivor is within this range
+local PROXIMITY_CHECK_RANGE = 80 
 
 -- Stamina Config
-local STAMINA_DRAIN_RATE = 10     -- Drains 10 per second
-local STAMINA_REGEN_RATE = 20     -- Regens 20 per second
-local DELAY_NORMAL = 0.2          -- Delay before regen normally
-local DELAY_EXHAUSTED = 1.85      -- Delay if stamina hits 0
+local STAMINA_DRAIN_RATE = 10     
+local STAMINA_REGEN_RATE = 20     
+local DELAY_NORMAL = 0.2          
+local DELAY_EXHAUSTED = 1.85      
 
 -- Speed Thresholds
 local DEFAULT_SPEED_LOW_HP = 14.5
 local DEFAULT_SPEED_HIGH_HP = 12.000001
+local BURST_SPEED_THRESHOLD = 21 -- Speed at which 1250 HP entities stop draining
 
 -- Specific HP Lookups (MaxHealth -> Drain Speed)
 local HP_SPEED_MAP = {
 	[2500] = 11.5,
 	[1700] = 9.5,
 	[1500] = 11.5,
-	[1250] = 11.5,
+	[1250] = 11.5, -- Base drain speed (if below 21)
 	[1100] = 10.5,
 	[1111] = 9.5,
 	[800]  = 10.25
@@ -50,10 +51,10 @@ local currentMethod = "Position" -- "Position" or "WalkSpeed"
 local trackedModels = {}
 
 --------------------------------------------------------------------------------
--- 1. UI SYSTEM (Forsaken ESP v5)
+-- 1. UI SYSTEM (Forsaken ESP v6)
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ForsakenESP_v5"
+ScreenGui.Name = "ForsakenESP_v6"
 ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
@@ -119,7 +120,7 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = MainFrame
 
 local Desc = Instance.new("TextLabel")
-Desc.Text = "v5"
+Desc.Text = "v6"
 Desc.Size = UDim2.new(0, 30, 0, 20)
 Desc.Position = UDim2.new(0, 130, 0, 12)
 Desc.BackgroundTransparency = 1
@@ -477,9 +478,9 @@ RunService.RenderStepped:Connect(function(dt)
 
 	local myPos = Camera.CFrame.Position
 	local validTargets = {}
-	local survivorPositions = {} -- For proximity check
+	local survivorPositions = {} 
 
-	-- 1. Gather all Survivior positions first (Optimization)
+	-- 1. Gather Survivor Positions (Optimization)
 	for model, data in pairs(trackedModels) do
 		if model.Parent and data.Humanoid.Parent then
 			if data.Humanoid.MaxHealth < 200 then
@@ -490,7 +491,7 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- 2. Process all targets
+	-- 2. Process Targets
 	for model, data in pairs(trackedModels) do
 		if not model.Parent or not data.Humanoid.Parent then 
 			RemoveESP(model) 
@@ -544,7 +545,7 @@ RunService.RenderStepped:Connect(function(dt)
 					instantSpeed = 0
 				end
 	
-				-- Reduced smoothing from 0.8 to 0.5 for better responsiveness in circles
+				-- Weight set to 0.5 as requested for responsive turns
 				data.AvgSpeed = (data.AvgSpeed * 0.5) + (instantSpeed * 0.5)
 				data.LastPosition = currentPos
 				calculatedSpeed = data.AvgSpeed
@@ -570,7 +571,7 @@ RunService.RenderStepped:Connect(function(dt)
 					end
 				end
 				if not nearbySurvivor then
-					canDrain = false -- Force regen/idle if no one is near
+					canDrain = false 
 				end
 			end
 
@@ -578,9 +579,22 @@ RunService.RenderStepped:Connect(function(dt)
 			-- STAMINA LOGIC
 			-- ==========================================================
 			if staminaEnabled then
-				-- Check Speed AND Proximity Permission
+				-- 1. Check if 1250 HP Burst Speed
+				if maxHp == 1250 and calculatedSpeed >= BURST_SPEED_THRESHOLD then
+					-- If burst speed, Stop Drain immediately
+					canDrain = false
+				end
+
+				-- 2. Drain Calculation
 				if canDrain and calculatedSpeed > RUN_THRESHOLD then
+					-- Running
 					data.Stamina = data.Stamina - (STAMINA_DRAIN_RATE * dt)
+					
+					-- 1250 HP Specific: Floor at 70
+					if maxHp == 1250 then
+						if data.Stamina < 70 then data.Stamina = 70 end
+					end
+
 					if data.Stamina <= 0 then
 						data.Stamina = 0
 						data.IsExhausted = true
@@ -589,6 +603,7 @@ RunService.RenderStepped:Connect(function(dt)
 						data.RegenTimer = DELAY_NORMAL
 					end
 				else
+					-- Resting
 					if data.RegenTimer > 0 then
 						data.RegenTimer = data.RegenTimer - dt
 					else
