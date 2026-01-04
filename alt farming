@@ -135,7 +135,7 @@ strokeTween:Play()
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, 0, 0, 45)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "   Teleport Master"
+titleLabel.Text = "   Alt farming simulator "
 titleLabel.TextColor3 = TEXT_COLOR
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Font = Enum.Font.GothamBlack
@@ -201,7 +201,7 @@ end
 local activeToggle = Instance.new("TextButton")
 activeToggle.Size = UDim2.new(1, 0, 0, 45)
 activeToggle.BackgroundColor3 = DARK_THEME
-activeToggle.Text = "Status: STOPPED"
+activeToggle.Text = "Status: Disabled"
 activeToggle.TextColor3 = Color3.fromRGB(255, 100, 100)
 activeToggle.Font = Enum.Font.GothamBold
 activeToggle.TextSize = 16
@@ -302,7 +302,7 @@ activeToggle.MouseButton1Click:Connect(function()
 	isRunning = not isRunning
 	
 	if isRunning then
-		activeToggle.Text = "Status: ACTIVE"
+		activeToggle.Text = "Status: Enabled"
 		activeToggle.TextColor3 = Color3.fromRGB(100, 255, 100)
 		activeToggle.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
 		
@@ -340,7 +340,7 @@ activeToggle.MouseButton1Click:Connect(function()
 			end
 		end)
 	else
-		activeToggle.Text = "Status: STOPPED"
+		activeToggle.Text = "Status: Disabled"
 		activeToggle.TextColor3 = Color3.fromRGB(255, 100, 100)
 		activeToggle.BackgroundColor3 = DARK_THEME
 	end
