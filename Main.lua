@@ -15,14 +15,15 @@ local Camera = Workspace.CurrentCamera
 local MAX_DISTANCE = 2500
 local HP_THRESHOLD = 200
 local HIGHLIGHT_LIMIT = 30 
+local PROXIMITY_CHECK_RANGE = 80 -- Killers only drain stamina if Survivor is within this range
 
 -- Stamina Config
 local STAMINA_DRAIN_RATE = 10     -- Drains 10 per second
 local STAMINA_REGEN_RATE = 20     -- Regens 20 per second
-local DELAY_NORMAL = 0.2            -- Delay before regen normally
-local DELAY_EXHAUSTED = 1.85         -- Delay if stamina hits 0
+local DELAY_NORMAL = 0.2          -- Delay before regen normally
+local DELAY_EXHAUSTED = 1.85      -- Delay if stamina hits 0
 
--- Speed Thresholds (Must be STRICTLY greater than these to drain)
+-- Speed Thresholds
 local DEFAULT_SPEED_LOW_HP = 14.5
 local DEFAULT_SPEED_HIGH_HP = 12.000001
 
@@ -49,10 +50,10 @@ local currentMethod = "Position" -- "Position" or "WalkSpeed"
 local trackedModels = {}
 
 --------------------------------------------------------------------------------
--- 1. UI SYSTEM (Forsaken ESP v4)
+-- 1. UI SYSTEM (Forsaken ESP v5)
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ForsakenESP_v4"
+ScreenGui.Name = "ForsakenESP_v5"
 ScreenGui.ResetOnSpawn = false
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
@@ -65,7 +66,7 @@ end
 -- Main Panel
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainPanel"
-MainFrame.Size = UDim2.new(0, 220, 0, 240) -- Increased height for new buttons
+MainFrame.Size = UDim2.new(0, 220, 0, 240)
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 MainFrame.Position = UDim2.new(0.5, 0, 0.4, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -118,7 +119,7 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = MainFrame
 
 local Desc = Instance.new("TextLabel")
-Desc.Text = "v4"
+Desc.Text = "v5"
 Desc.Size = UDim2.new(0, 30, 0, 20)
 Desc.Position = UDim2.new(0, 130, 0, 12)
 Desc.BackgroundTransparency = 1
@@ -138,7 +139,7 @@ MinButton.Font = Enum.Font.GothamBold
 MinButton.TextSize = 24
 MinButton.Parent = MainFrame
 
--- == ESP TOGGLE ==
+-- Buttons
 local ESPToggleBtn = Instance.new("TextButton")
 ESPToggleBtn.Size = UDim2.new(0.9, 0, 0, 40)
 ESPToggleBtn.Position = UDim2.new(0.5, 0, 0.18, 0)
@@ -148,31 +149,23 @@ ESPToggleBtn.Text = "ESP: OFF"
 ESPToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ESPToggleBtn.Font = Enum.Font.GothamBold
 ESPToggleBtn.TextSize = 16
-ESPToggleBtn.AutoButtonColor = false -- DISABLE DEFAULT ROBLOX COLOR BEHAVIOR
+ESPToggleBtn.AutoButtonColor = false 
 ESPToggleBtn.Parent = MainFrame
+Instance.new("UICorner", ESPToggleBtn).CornerRadius = UDim.new(0, 6)
 
-local BtnCorner1 = Instance.new("UICorner")
-BtnCorner1.CornerRadius = UDim.new(0, 6)
-BtnCorner1.Parent = ESPToggleBtn
-
--- == STAMINA TOGGLE ==
 local StaminaToggleBtn = Instance.new("TextButton")
 StaminaToggleBtn.Size = UDim2.new(0.9, 0, 0, 40)
 StaminaToggleBtn.Position = UDim2.new(0.5, 0, 0.38, 0)
 StaminaToggleBtn.AnchorPoint = Vector2.new(0.5, 0)
-StaminaToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80) -- Default ON
+StaminaToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
 StaminaToggleBtn.Text = "Stamina: ON"
 StaminaToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 StaminaToggleBtn.Font = Enum.Font.GothamBold
 StaminaToggleBtn.TextSize = 16
 StaminaToggleBtn.AutoButtonColor = false
 StaminaToggleBtn.Parent = MainFrame
+Instance.new("UICorner", StaminaToggleBtn).CornerRadius = UDim.new(0, 6)
 
-local BtnCorner2 = Instance.new("UICorner")
-BtnCorner2.CornerRadius = UDim.new(0, 6)
-BtnCorner2.Parent = StaminaToggleBtn
-
--- == METHOD SELECTOR ==
 local MethodLabel = Instance.new("TextLabel")
 MethodLabel.Text = "Calc Method"
 MethodLabel.Size = UDim2.new(1, 0, 0, 20)
@@ -194,23 +187,18 @@ MethodBtn.Font = Enum.Font.GothamBold
 MethodBtn.TextSize = 14
 MethodBtn.AutoButtonColor = false
 MethodBtn.Parent = MainFrame
+Instance.new("UICorner", MethodBtn).CornerRadius = UDim.new(0, 6)
 
-local BtnCorner3 = Instance.new("UICorner")
-BtnCorner3.CornerRadius = UDim.new(0, 6)
-BtnCorner3.Parent = MethodBtn
-
--- Selection Dropdown (Hidden by default)
+-- Dropdown
 local MethodDropdown = Instance.new("Frame")
 MethodDropdown.Size = UDim2.new(0.9, 0, 0, 70)
-MethodDropdown.Position = UDim2.new(0.5, 0, 0.85, 0) -- Pops out below
+MethodDropdown.Position = UDim2.new(0.5, 0, 0.85, 0)
 MethodDropdown.AnchorPoint = Vector2.new(0.5, 0)
 MethodDropdown.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 MethodDropdown.Visible = false
 MethodDropdown.ZIndex = 5
 MethodDropdown.Parent = MainFrame
-
-local DropCorner = Instance.new("UICorner")
-DropCorner.Parent = MethodDropdown
+Instance.new("UICorner", MethodDropdown)
 
 local PosBtn = Instance.new("TextButton")
 PosBtn.Size = UDim2.new(1, 0, 0.5, 0)
@@ -231,7 +219,7 @@ WalkBtn.Font = Enum.Font.Gotham
 WalkBtn.ZIndex = 6
 WalkBtn.Parent = MethodDropdown
 
--- Icon (Minimized)
+-- Icon
 local IconFrame = Instance.new("ImageButton")
 IconFrame.Name = "FloatingIcon"
 IconFrame.Size = UDim2.new(0, 0, 0, 0)
@@ -242,37 +230,28 @@ IconFrame.Image = "rbxthumb://type=Asset&id=41862651&w=420&h=420"
 IconFrame.Visible = false 
 IconFrame.Parent = ScreenGui
 MakeDraggable(IconFrame)
-
-local IconCorner = Instance.new("UICorner")
-IconCorner.CornerRadius = UDim.new(1, 0)
-IconCorner.Parent = IconFrame
-
+Instance.new("UICorner", IconFrame).CornerRadius = UDim.new(1, 0)
 local IconStroke = Instance.new("UIStroke")
 IconStroke.Thickness = 3
 IconStroke.Color = Color3.fromRGB(255, 255, 255)
 IconStroke.Parent = IconFrame
 TweenService:Create(IconStroke, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(0, 0, 0)}):Play()
 
--- ================= INTERACTIONS =================
-
--- Hover Logic that respects Toggle State
+-- Interaction Logic
 local function applyStateHover(btn, isEnabled)
 	local baseColor = isEnabled and Color3.fromRGB(50, 200, 80) or Color3.fromRGB(255, 60, 60)
-	btn.BackgroundColor3 = baseColor -- Reset to base state immediately
+	btn.BackgroundColor3 = baseColor 
 
 	btn.MouseEnter:Connect(function() 
-		-- Check current state to know which color to brighten
 		local currentColor = (btn.Text:find("ON") or btn.Text:find("Position") or btn.Text:find("WalkSpeed")) and btn.BackgroundColor3 or baseColor
 		tween(btn, {BackgroundColor3 = currentColor:Lerp(Color3.new(1,1,1), 0.2)}, 0.2) 
 	end)
 	
 	btn.MouseLeave:Connect(function() 
-		-- Revert to correct state color
 		local stateColor
 		if btn == ESPToggleBtn then stateColor = espEnabled and Color3.fromRGB(50, 200, 80) or Color3.fromRGB(255, 60, 60)
 		elseif btn == StaminaToggleBtn then stateColor = staminaEnabled and Color3.fromRGB(50, 200, 80) or Color3.fromRGB(255, 60, 60) 
 		else stateColor = Color3.fromRGB(60, 60, 60) end
-		
 		tween(btn, {BackgroundColor3 = stateColor}, 0.2) 
 	end)
 	
@@ -280,11 +259,9 @@ local function applyStateHover(btn, isEnabled)
 	btn.MouseButton1Up:Connect(function() tween(btn, {Size = UDim2.new(0.9, 0, 0, 40)}, 0.4, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out) end)
 end
 
--- Initialize Buttons
 applyStateHover(ESPToggleBtn, false)
 applyStateHover(StaminaToggleBtn, true)
 
--- Menu Logic
 local function OpenMenu()
 	IconFrame.Visible = true
 	tween(IconFrame, {Size = UDim2.new(0,0,0,0)}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
@@ -307,7 +284,6 @@ end
 MinButton.MouseButton1Click:Connect(CloseMenu)
 IconFrame.MouseButton1Click:Connect(OpenMenu)
 
--- ESP Toggle Action
 ESPToggleBtn.MouseButton1Click:Connect(function()
 	espEnabled = not espEnabled
 	if espEnabled then
@@ -319,7 +295,6 @@ ESPToggleBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Stamina Toggle Action
 StaminaToggleBtn.MouseButton1Click:Connect(function()
 	staminaEnabled = not staminaEnabled
 	if staminaEnabled then
@@ -331,10 +306,7 @@ StaminaToggleBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Method Selector Action
-MethodBtn.MouseButton1Click:Connect(function()
-	MethodDropdown.Visible = not MethodDropdown.Visible
-end)
+MethodBtn.MouseButton1Click:Connect(function() MethodDropdown.Visible = not MethodDropdown.Visible end)
 
 PosBtn.MouseButton1Click:Connect(function()
 	currentMethod = "Position"
@@ -394,7 +366,6 @@ local function GetStaminaParameters(maxHealth)
 			speedThreshold = DEFAULT_SPEED_HIGH_HP
 		end
 	end
-	
 	return maxStamina, speedThreshold
 end
 
@@ -499,7 +470,6 @@ end
 -- 3. MAIN LOOP
 --------------------------------------------------------------------------------
 RunService.RenderStepped:Connect(function(dt)
-	-- If ESP is OFF, hide everything and return
 	if not espEnabled then
 		for _, d in pairs(trackedModels) do d.Highlight.Enabled = false d.Billboard.Enabled = false end
 		return
@@ -507,7 +477,20 @@ RunService.RenderStepped:Connect(function(dt)
 
 	local myPos = Camera.CFrame.Position
 	local validTargets = {}
+	local survivorPositions = {} -- For proximity check
 
+	-- 1. Gather all Survivior positions first (Optimization)
+	for model, data in pairs(trackedModels) do
+		if model.Parent and data.Humanoid.Parent then
+			if data.Humanoid.MaxHealth < 200 then
+				table.insert(survivorPositions, data.Root.Position)
+			end
+		else
+			RemoveESP(model)
+		end
+	end
+
+	-- 2. Process all targets
 	for model, data in pairs(trackedModels) do
 		if not model.Parent or not data.Humanoid.Parent then 
 			RemoveESP(model) 
@@ -545,12 +528,11 @@ RunService.RenderStepped:Connect(function(dt)
 			local MAX_STAMINA, RUN_THRESHOLD = GetStaminaParameters(maxHp)
 
 			-- ==========================================================
-			-- SPEED CALCULATION SWITCH
+			-- SPEED CALCULATION
 			-- ==========================================================
 			local calculatedSpeed = 0
 			
 			if currentMethod == "Position" then
-				-- METHOD 1: POSITION DELTA
 				local currentPos = data.Root.Position
 				local horizontalPos = Vector3.new(currentPos.X, 0, currentPos.Z)
 				local lastHorizontalPos = Vector3.new(data.LastPosition.X, 0, data.LastPosition.Z)
@@ -558,19 +540,16 @@ RunService.RenderStepped:Connect(function(dt)
 				local distanceMoved = (horizontalPos - lastHorizontalPos).Magnitude
 				local instantSpeed = distanceMoved / dt 
 				
-				-- Generator Fix: If Input is 0, force speed 0
 				if data.Humanoid.MoveDirection.Magnitude == 0 then
 					instantSpeed = 0
 				end
 	
-				-- Smoothing
-				data.AvgSpeed = (data.AvgSpeed * 0.8) + (instantSpeed * 0.2)
+				-- Reduced smoothing from 0.8 to 0.5 for better responsiveness in circles
+				data.AvgSpeed = (data.AvgSpeed * 0.5) + (instantSpeed * 0.5)
 				data.LastPosition = currentPos
 				calculatedSpeed = data.AvgSpeed
 
 			elseif currentMethod == "WalkSpeed" then
-				-- METHOD 2: DIRECT WALKSPEED PROPERTY
-				-- If MoveDirection is 0, they aren't moving, so effective speed is 0
 				if data.Humanoid.MoveDirection.Magnitude > 0 then
 					calculatedSpeed = data.Humanoid.WalkSpeed
 				else
@@ -579,12 +558,28 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 
 			-- ==========================================================
+			-- PROXIMITY LOGIC (FOR KILLERS)
+			-- ==========================================================
+			local canDrain = true
+			if maxHp >= 200 then
+				local nearbySurvivor = false
+				for _, surPos in ipairs(survivorPositions) do
+					if (data.Root.Position - surPos).Magnitude <= PROXIMITY_CHECK_RANGE then
+						nearbySurvivor = true
+						break
+					end
+				end
+				if not nearbySurvivor then
+					canDrain = false -- Force regen/idle if no one is near
+				end
+			end
+
+			-- ==========================================================
 			-- STAMINA LOGIC
 			-- ==========================================================
 			if staminaEnabled then
-				-- STRICT CHECK: Must be GREATER than threshold
-				if calculatedSpeed > RUN_THRESHOLD then
-					-- Running
+				-- Check Speed AND Proximity Permission
+				if canDrain and calculatedSpeed > RUN_THRESHOLD then
 					data.Stamina = data.Stamina - (STAMINA_DRAIN_RATE * dt)
 					if data.Stamina <= 0 then
 						data.Stamina = 0
@@ -594,7 +589,6 @@ RunService.RenderStepped:Connect(function(dt)
 						data.RegenTimer = DELAY_NORMAL
 					end
 				else
-					-- Resting
 					if data.RegenTimer > 0 then
 						data.RegenTimer = data.RegenTimer - dt
 					else
@@ -604,12 +598,11 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 				data.Stamina = math.clamp(data.Stamina, 0, MAX_STAMINA)
 			else
-				-- If Stamina is toggled OFF, just keep it max
 				data.Stamina = MAX_STAMINA 
 			end
 
 			-- ==========================================================
-			-- DISPLAY LOGIC
+			-- DISPLAY
 			-- ==========================================================
 			local staminaString = ""
 			
