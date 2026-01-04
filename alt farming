@@ -1,0 +1,348 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- // 1. UI Setup & Cleanup //
+-- Remove old instance if it exists to prevent duplicates
+for _, ui in pairs(CoreGui:GetChildren()) do
+	if ui.Name == "TeleportToolUI_Fancy" then ui:Destroy() end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TeleportToolUI_Fancy"
+screenGui.ResetOnSpawn = false
+
+-- Security check for executors
+if syn and syn.protect_gui then 
+	syn.protect_gui(screenGui)
+	screenGui.Parent = CoreGui
+elseif gethui then
+	screenGui.Parent = gethui()
+else
+	screenGui.Parent = CoreGui
+end
+
+-- // 2. Configuration & Themes //
+local THEME_COLOR = Color3.fromRGB(50, 50, 50) -- Standard Gray
+local DARK_THEME = Color3.fromRGB(30, 30, 30) -- Darker Gray for inputs
+local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local CORNER_RADIUS = UDim.new(0, 10)
+
+-- // 3. Animation Utilities //
+
+-- Function to make UI "Bounce" when hovered
+local function addHoverEffect(button)
+	local originalSize = button.Size
+	
+	button.MouseEnter:Connect(function()
+		TweenService:Create(button, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset + 4, originalSize.Y.Scale, originalSize.Y.Offset + 2)
+		}):Play()
+	end)
+
+	button.MouseLeave:Connect(function()
+		TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = originalSize
+		}):Play()
+	end)
+end
+
+-- Function to make UI Draggable
+local function makeDraggable(frame, dragHandle)
+	local dragging, dragInput, dragStart, startPos
+	
+	dragHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+			
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	
+	dragHandle.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+	
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			TweenService:Create(frame, TweenInfo.new(0.05, Enum.EasingStyle.Sine), {
+				Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			}):Play()
+		end
+	end)
+end
+
+-- // 4. Building the UI //
+
+-- >> Toggle Button (Closed State) <<
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "OpenButton"
+toggleBtn.Size = UDim2.new(0, 100, 0, 40)
+toggleBtn.Position = UDim2.new(0, 30, 0.85, 0)
+toggleBtn.BackgroundColor3 = THEME_COLOR
+toggleBtn.Text = "Open UI"
+toggleBtn.TextColor3 = TEXT_COLOR
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.Parent = screenGui
+-- Make the button round
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = CORNER_RADIUS
+btnCorner.Parent = toggleBtn
+-- Add interaction
+makeDraggable(toggleBtn, toggleBtn) -- Make the toggle button itself draggable
+addHoverEffect(toggleBtn)
+
+-- >> Main Interface <<
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 260, 0, 440)
+mainFrame.Position = UDim2.new(0.5, -130, 0.5, -220)
+mainFrame.BackgroundColor3 = THEME_COLOR
+mainFrame.Visible = false 
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = CORNER_RADIUS
+mainCorner.Parent = mainFrame
+
+-- >> Breathing Outline (Black <-> White) <<
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+mainStroke.Color = Color3.new(0, 0, 0) -- Start Black
+mainStroke.Parent = mainFrame
+
+-- Animate the stroke loop
+local strokeTweenInfo = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local strokeTween = TweenService:Create(mainStroke, strokeTweenInfo, {Color = Color3.new(1, 1, 1)}) -- Tween to White
+strokeTween:Play()
+
+-- >> Title Bar <<
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 45)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "   Teleport Master"
+titleLabel.TextColor3 = TEXT_COLOR
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Font = Enum.Font.GothamBlack
+titleLabel.TextSize = 18
+titleLabel.Parent = mainFrame
+makeDraggable(mainFrame, titleLabel) -- Drag the main frame by holding the title
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 8)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+closeBtn.Text = ""
+closeBtn.Parent = mainFrame
+local closeCorner = Instance.new("UICorner", closeBtn); closeCorner.CornerRadius = UDim.new(1,0) -- Circle
+local closeIcon = Instance.new("TextLabel", closeBtn)
+closeIcon.Size = UDim2.new(1,0,1,0)
+closeIcon.BackgroundTransparency = 1
+closeIcon.Text = "X"
+closeIcon.TextColor3 = Color3.new(1,1,1)
+closeIcon.Font = Enum.Font.GothamBold
+addHoverEffect(closeBtn)
+
+-- >> Container for Inputs <<
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, -24, 1, -55)
+container.Position = UDim2.new(0, 12, 0, 50)
+container.BackgroundTransparency = 1
+container.Parent = mainFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = container
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 12)
+
+-- Helper to create inputs
+local function createInput(placeholder, text, order)
+	local box = Instance.new("TextBox")
+	box.Size = UDim2.new(1, 0, 0, 38)
+	box.BackgroundColor3 = DARK_THEME
+	box.TextColor3 = TEXT_COLOR
+	box.PlaceholderText = placeholder
+	box.PlaceholderColor3 = Color3.fromRGB(150,150,150)
+	box.Text = text
+	box.Font = Enum.Font.Gotham
+	box.TextSize = 14
+	box.LayoutOrder = order
+	
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = box
+	
+	-- Subtle stroke for inputs
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(80,80,80)
+	s.Thickness = 1
+	s.Parent = box
+	
+	box.Parent = container
+	return box
+end
+
+-- >> Controls <<
+local activeToggle = Instance.new("TextButton")
+activeToggle.Size = UDim2.new(1, 0, 0, 45)
+activeToggle.BackgroundColor3 = DARK_THEME
+activeToggle.Text = "Status: STOPPED"
+activeToggle.TextColor3 = Color3.fromRGB(255, 100, 100)
+activeToggle.Font = Enum.Font.GothamBold
+activeToggle.TextSize = 16
+activeToggle.LayoutOrder = 1
+activeToggle.Parent = container
+local atCorner = Instance.new("UICorner"); atCorner.Parent = activeToggle
+addHoverEffect(activeToggle)
+
+local userBox = createInput("Target Username (Partial)", "", 2)
+local timeBox = createInput("Loop Delay (Seconds)", "0", 3)
+local radiusBox = createInput("Distance/Radius", "3", 4)
+
+-- >> Direction Dropdown <<
+local directionFrame = Instance.new("Frame")
+directionFrame.Size = UDim2.new(1, 0, 0, 140) 
+directionFrame.BackgroundTransparency = 1
+directionFrame.LayoutOrder = 5
+directionFrame.Parent = container
+directionFrame.ZIndex = 5 -- Ensure it sits above if needed
+
+local currentDirBtn = Instance.new("TextButton")
+currentDirBtn.Size = UDim2.new(1, 0, 0, 38)
+currentDirBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
+currentDirBtn.Text = "Direction: Front"
+currentDirBtn.TextColor3 = TEXT_COLOR
+currentDirBtn.Font = Enum.Font.GothamBold
+currentDirBtn.TextSize = 14
+currentDirBtn.Parent = directionFrame
+local cdCorner = Instance.new("UICorner"); cdCorner.Parent = currentDirBtn
+addHoverEffect(currentDirBtn)
+
+local dropContainer = Instance.new("Frame")
+dropContainer.Size = UDim2.new(1, 0, 0, 100)
+dropContainer.Position = UDim2.new(0, 0, 0, 45)
+dropContainer.BackgroundTransparency = 1
+dropContainer.Visible = false
+dropContainer.Parent = directionFrame
+dropContainer.ZIndex = 10
+
+local dropLayout = Instance.new("UIListLayout")
+dropLayout.Parent = dropContainer
+dropLayout.Padding = UDim.new(0, 5)
+
+local directions = {"Front", "Back", "Left", "Right"}
+local selectedDirection = "Front"
+
+for _, dir in ipairs(directions) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 25)
+	btn.BackgroundColor3 = DARK_THEME
+	btn.Text = dir
+	btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 12
+	btn.ZIndex = 11
+	btn.Parent = dropContainer
+	
+	local c = Instance.new("UICorner"); c.Parent = btn
+	
+	btn.MouseButton1Click:Connect(function()
+		selectedDirection = dir
+		currentDirBtn.Text = "Direction: " .. dir
+		dropContainer.Visible = false
+	end)
+end
+
+currentDirBtn.MouseButton1Click:Connect(function()
+	dropContainer.Visible = not dropContainer.Visible
+end)
+
+-- // 5. Logic & Teleportation //
+
+-- Find player helper
+local function getPlayerByPartialName(partialName)
+	if not partialName or partialName == "" then return nil end
+	partialName = partialName:lower()
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			if player.Name:lower():find(partialName) or player.DisplayName:lower():find(partialName) then
+				return player
+			end
+		end
+	end
+	return nil
+end
+
+local isRunning = false
+
+toggleBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+end)
+closeBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = false
+end)
+
+activeToggle.MouseButton1Click:Connect(function()
+	isRunning = not isRunning
+	
+	if isRunning then
+		activeToggle.Text = "Status: ACTIVE"
+		activeToggle.TextColor3 = Color3.fromRGB(100, 255, 100)
+		activeToggle.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
+		
+		task.spawn(function()
+			while isRunning do
+				local targetTxt = userBox.Text
+				local timeTxt = tonumber(timeBox.Text) or 0
+				local radiusTxt = tonumber(radiusBox.Text) or 3
+				
+				local targetPlayer = getPlayerByPartialName(targetTxt)
+				
+				if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+					
+					local tRoot = targetPlayer.Character.HumanoidRootPart
+					local lRoot = LocalPlayer.Character.HumanoidRootPart
+					
+					local offset = CFrame.new(0, 0, -radiusTxt) -- Default Front
+					
+					if selectedDirection == "Back" then
+						offset = CFrame.new(0, 0, radiusTxt)
+					elseif selectedDirection == "Left" then
+						offset = CFrame.new(-radiusTxt, 0, 0)
+					elseif selectedDirection == "Right" then
+						offset = CFrame.new(radiusTxt, 0, 0)
+					end
+					
+					lRoot.CFrame = tRoot.CFrame * offset
+				end
+				
+				if timeTxt <= 0 then
+					RunService.Heartbeat:Wait()
+				else
+					task.wait(timeTxt)
+				end
+			end
+		end)
+	else
+		activeToggle.Text = "Status: STOPPED"
+		activeToggle.TextColor3 = Color3.fromRGB(255, 100, 100)
+		activeToggle.BackgroundColor3 = DARK_THEME
+	end
+end)
+
