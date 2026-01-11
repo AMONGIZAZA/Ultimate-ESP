@@ -35,17 +35,20 @@ local NPC_WHITELIST = {
     "Baby Zombie_1", "Baby Zombie_2", "DREAM"
 }
 
+-- Global State
 local killCount = 0
 local totalKills = 0
 local isAbilityActive = false 
-local isStealing = false
+local isStealing = false 
+local forceStopSteal = false 
 local deadCache = {} 
 local targetBaseSpeed = 16 
 local deathCounter = 0
 local hasSpawnedOnce = false
 
+-- GUI Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay"
+ScreenGui.Name = "JusticeOverlay_FixedV7"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -235,26 +238,24 @@ end
 
 local function CreateBlueTrail(char)
     local root = char:WaitForChild("HumanoidRootPart")
-    
     local att1 = Instance.new("Attachment")
     att1.Position = Vector3.new(0, 0.5, 0)
     att1.Parent = root
-    
     local att2 = Instance.new("Attachment")
     att2.Position = Vector3.new(0, -0.5, 0)
     att2.Parent = root
-    
     local trail = Instance.new("Trail")
     trail.Parent = root
     trail.Attachment0 = att1
     trail.Attachment1 = att2
     trail.Color = ColorSequence.new(Color3.fromRGB(0, 100, 255))
     trail.Lifetime = 0.4
-    trail.WidthScale = NumberSequence.new(1, 0) -- Biggest inside, smallest behind
+    trail.WidthScale = NumberSequence.new(1, 0) 
     trail.LightEmission = 0.5
     trail.FaceCamera = true
 end
 
+-- Fallback Speed Check
 RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
     if char then
@@ -270,6 +271,10 @@ RunService.Heartbeat:Connect(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
+    isStealing = false 
+    isAbilityActive = false
+    forceStopSteal = false
+
     if not IsSpecialUser then return end
     
     local hum = char:WaitForChild("Humanoid")
@@ -289,13 +294,15 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 
     if deathCounter >= 1 then
         StealBtn.Visible = true
+        StealBtn.Text = "STEAL"
+        StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     end
 
     if deathCounter == 1 then
         PlaySound(ASSETS.DeathSound1, false, 1)
     elseif deathCounter == 2 then
         PlaySound(ASSETS.DeathSound2, false, 1)
-        CreateBlueTrail(char) -- Add Trail on 2nd Death
+        CreateBlueTrail(char) 
     end
     
     local t1 = TweenService:Create(BlueOverlay, TweenInfo.new(0.5), {BackgroundTransparency = 0.45})
@@ -339,13 +346,10 @@ end)
 local function UpdateUI()
     CurrentKillLabel.Text = tostring(killCount)
     TotalKillLabel.Text = "Total kills: " .. tostring(totalKills)
-    
     local percent = math.clamp(killCount / 50, 0, 1)
     local newColor = Color3.new(1, 1, 1):Lerp(Color3.new(1, 0, 0), percent)
     KillstreakLabel.TextColor3 = newColor
-    
     if killCount >= 50 then KillstreakLabel.Font = Enum.Font.Creepster else KillstreakLabel.Font = Enum.Font.GothamBlack end
-    
     if killCount >= 100 then
         KillstreakLabel.TextColor3 = Color3.new(0,0,0)
         local x = (math.random() - 0.5) * 5
@@ -358,12 +362,9 @@ local function HandleKill(victimPosition)
     killCount = killCount + 1
     totalKills = totalKills + 1
     UpdateUI()
-    
     local myChar = LocalPlayer.Character
     if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-    
     local distance = (myChar.HumanoidRootPart.Position - victimPosition).Magnitude
-    
     if distance >= 60 then
         ShakeScreen(0.5, 0.3)
         local t1 = TweenService:Create(RedOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 0.5})
@@ -390,7 +391,6 @@ local function ScanForDeadHumanoids()
     if not myChar then return end
     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
     if not myRoot then return end
-
     for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("Humanoid") and v.Parent ~= myChar then
             if v.Health <= 0 then
@@ -408,31 +408,23 @@ local function ScanForDeadHumanoids()
 end
 
 local visionCooldownEnd = 0 
-
 AbilityBtn.MouseButton1Click:Connect(function()
     if tick() < visionCooldownEnd then return end
-    
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChild("Humanoid")
     if not hum then return end
-    
     isAbilityActive = true
-    
     local slowSpeed = 6.5
     local cooldownDuration = 25
     if IsSpecialUser and deathCounter > 0 then
         slowSpeed = 10
         cooldownDuration = 2.5
     end
-    
     visionCooldownEnd = tick() + cooldownDuration
-    
     local savedSpeed = targetBaseSpeed 
     TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = slowSpeed}):Play()
     ShowBlood()
-    
     task.delay(0.6, function() PlaySound(ASSETS.AbilitySound, false, 1) end)
-    
     local highlights = {}
     for _, model in pairs(workspace:GetDescendants()) do
         if model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= char then
@@ -448,15 +440,9 @@ AbilityBtn.MouseButton1Click:Connect(function()
             end
         end
     end
-    
     task.wait(2)
-    
-    if hum then
-        TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = savedSpeed}):Play()
-    end
-    
+    if hum then TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = savedSpeed}):Play() end
     task.wait(3) 
-    
     for _, h in pairs(highlights) do
         if h.Parent then
             local t = TweenService:Create(h, TweenInfo.new(0.5), {FillTransparency = 1, OutlineTransparency = 1})
@@ -464,9 +450,7 @@ AbilityBtn.MouseButton1Click:Connect(function()
             t.Completed:Connect(function() h:Destroy() end)
         end
     end
-    
     isAbilityActive = false
-    
     task.spawn(function()
         while tick() < visionCooldownEnd do
             local remaining = math.ceil(visionCooldownEnd - tick())
@@ -479,9 +463,19 @@ AbilityBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- // STEAL ABILITY LOGIC (FIXED) //
+
 local stealCooldownEnd = 0
 
 StealBtn.MouseButton1Click:Connect(function()
+    -- STRICT DEBOUNCE: Prevent double-clicking/void bug
+    if isStealing then
+        if StealBtn.Text == "STOP" then
+            forceStopSteal = true -- Only allow clicking if we are trying to STOP
+        end
+        return -- Block everything else
+    end
+
     if tick() < stealCooldownEnd then return end
     
     local char = LocalPlayer.Character
@@ -492,8 +486,9 @@ StealBtn.MouseButton1Click:Connect(function()
     if not root or not hum or not head then return end
     
     stealCooldownEnd = tick() + 20
-    isStealing = true
+    isStealing = true -- Lock the button immediately
     isAbilityActive = true
+    forceStopSteal = false
     
     local nearestNPC = nil
     local nearestDist = math.huge
@@ -520,28 +515,56 @@ StealBtn.MouseButton1Click:Connect(function()
     local npcRoot = nearestNPC:FindFirstChild("HumanoidRootPart") or nearestNPC:FindFirstChild("Torso")
     root.Anchored = true
     
-    -- 1. Auto-Tracking Fly to NPC
+    -- 1. SMOOTH TRACKING (Fly to NPC)
+    local stealStartTime = tick()
     local tracking = true
-    while tracking do
+    
+    while tracking and isStealing and hum.Health > 0 do
+        if (tick() - stealStartTime) > 10 then
+            StealBtn.Text = "STOP"
+            StealBtn.BackgroundColor3 = Color3.new(1, 0, 0) -- Turn Button Red
+        end
+        if forceStopSteal then break end
+
         local currentPos = root.Position
-        local targetPos = npcRoot.Position
-        local direction = (targetPos - currentPos).Unit
+        -- Target: 2 Studs BELOW the NPC to ensure Grab hitbox touches
+        local targetPos = npcRoot.Position - Vector3.new(0, 2, 0)
         local dist = (targetPos - currentPos).Magnitude
         
-        if dist < 5 then
+        if dist < 3 then
             tracking = false
         else
-            root.CFrame = CFrame.new(currentPos + direction * 2, targetPos) -- Fly Speed ~120 studs/sec (60fps * 2)
+            local direction = (targetPos - currentPos).Unit
+            local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 3)
+            root.CFrame = root.CFrame:Lerp(newCFrame, 0.2)
         end
         RunService.Heartbeat:Wait()
+    end
+    
+    if forceStopSteal or hum.Health <= 0 then
+        root.Anchored = false
+        isStealing = false
+        isAbilityActive = false
+        -- Reset Button Look
+        StealBtn.Text = "STEAL"
+        StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        TweenService:Create(root, TweenInfo.new(1), {CFrame = root.CFrame * CFrame.new(0, -50, 0)}):Play()
+        task.wait(1)
+        return
     end
     
     local isValidTarget = IsInWhitelist(nearestNPC.Name)
     
     if isValidTarget then
-        -- Grab
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
+        
+        -- Force Position Update Right Before Grab
+        root.CFrame = npcRoot.CFrame * CFrame.new(0, -2, 0)
+        
+        -- Wait 0.3s (Requested Fix)
+        task.wait(0.3)
+        
         if grabEvent and hitBox then
             grabEvent:FireServer("Grab", hitBox)
             grabEvent:FireServer("Grab", hitBox)
@@ -550,50 +573,70 @@ StealBtn.MouseButton1Click:Connect(function()
         PlaySound(ASSETS.StealSuccess1, false, 1)
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        -- Rise Up Logic (with Grab Check & Head Collision)
         local targetRiseHeight = 50
         local riseDuration = 4
-        local startTime = tick()
+        local riseStartTime = tick()
         local startY = root.Position.Y
         
-        -- Head Collision Detection
         local headConn
         headConn = head.Touched:Connect(function()
             targetRiseHeight = targetRiseHeight + 15
             riseDuration = riseDuration + 2
         end)
         
-        while (tick() - startTime) < riseDuration do
-            local alpha = (tick() - startTime) / riseDuration
+        local rising = true
+        while rising and isStealing and hum.Health > 0 do
+            if (tick() - stealStartTime) > 10 then
+                StealBtn.Text = "STOP"
+                StealBtn.BackgroundColor3 = Color3.new(1, 0, 0)
+            end
+            if forceStopSteal then break end
+
+            local elapsed = tick() - riseStartTime
+            if elapsed >= riseDuration then rising = false end
+            
             local currentHeight = root.Position.Y - startY
             
-            -- Manual Rise Movement
             if currentHeight < targetRiseHeight then
-                root.CFrame = root.CFrame * CFrame.new(0, 0.5, 0) -- Rise speed
+                root.CFrame = root.CFrame:Lerp(root.CFrame * CFrame.new(0, 1, 0), 0.2)
             end
             
-            -- Check if NPC fell off
-            local dist = (root.Position - npcRoot.Position).Magnitude
-            if dist > 20 then
-                -- Go Back Down!
-                while (root.Position - npcRoot.Position).Magnitude > 5 do
-                    root.CFrame = root.CFrame:Lerp(npcRoot.CFrame, 0.2)
-                    RunService.Heartbeat:Wait()
+            if npcRoot then
+                local dist = (root.Position - npcRoot.Position).Magnitude
+                if dist > 20 then
+                    while (root.Position - (npcRoot.Position - Vector3.new(0, 2, 0))).Magnitude > 5 and isStealing and hum.Health > 0 do
+                        if forceStopSteal then break end
+                        root.CFrame = root.CFrame:Lerp(npcRoot.CFrame * CFrame.new(0, -2, 0), 0.2)
+                        RunService.Heartbeat:Wait()
+                    end
+                    
+                    if forceStopSteal then break end
+                    task.wait(0.3)
+                    
+                    if grabEvent and hitBox then
+                        grabEvent:FireServer("Grab", hitBox)
+                        grabEvent:FireServer("Grab", hitBox)
+                    end
+                    
+                    startY = root.Position.Y
+                    riseStartTime = tick() 
                 end
-                -- Re-Grab
-                if grabEvent and hitBox then
-                    grabEvent:FireServer("Grab", hitBox)
-                    grabEvent:FireServer("Grab", hitBox)
-                end
-                -- Reset Rise stats partially to allow re-rising
-                startY = root.Position.Y
-                startTime = tick() -- Restart timer essentially
             end
-            
             RunService.Heartbeat:Wait()
         end
         
         if headConn then headConn:Disconnect() end
+        
+        if forceStopSteal or hum.Health <= 0 then
+            root.Anchored = false
+            isStealing = false
+            isAbilityActive = false
+            StealBtn.Text = "STEAL"
+            StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            TweenService:Create(root, TweenInfo.new(1), {CFrame = root.CFrame * CFrame.new(0, -50, 0)}):Play()
+            task.wait(1)
+            return
+        end
         
         task.wait(0.5)
         
@@ -619,6 +662,9 @@ StealBtn.MouseButton1Click:Connect(function()
     
     isStealing = false
     isAbilityActive = false
+    -- Reset Button UI in case it was red
+    StealBtn.Text = "STEAL"
+    StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     
     task.spawn(function()
         while tick() < stealCooldownEnd do
@@ -637,45 +683,35 @@ task.spawn(function()
         PlaySound(ASSETS.SpawnSound, false, 1)
         hasSpawnedOnce = true 
     end
-
     TweenService:Create(IntroFrame, TweenInfo.new(1), {BackgroundTransparency = 0}):Play()
     task.wait(1.1)
-    
     local textContent = '<font color="rgb(170,0,0)" strokeColor="rgb(80,0,0)" strokeTransparency="0">Bring <font color="rgb(255,255,0)" strokeColor="rgb(255,100,0)">JUSTICE</font> to life. Trust nothing, observe everything.</font>'
     if IsSpecialUser then
         textContent = '<font color="rgb(0,255,255)" strokeColor="rgb(0,0,255)" strokeTransparency="0">Kill all intruders.</font>'
     end
-    
     IntroText.Text = textContent
     IntroText.MaxVisibleGraphemes = 0
     IntroText.TextTransparency = 0
-    
     local totalChars = #IntroText.ContentText
     for i = 1, totalChars do
         IntroText.MaxVisibleGraphemes = i
         PlaySound(ASSETS.TypingSound, false, 1)
         task.wait(0.05)
     end
-    
     task.wait(5)
-    
     TweenService:Create(IntroText, TweenInfo.new(1), {TextTransparency = 1}):Play()
     task.wait(2)
     TweenService:Create(IntroFrame, TweenInfo.new(2), {BackgroundTransparency = 1}):Play()
-    
     for _, item in pairs(ASSETS.ShopItems) do
         local args = {item[1], item[2]}
         local event = ReplicatedStorage:WaitForChild("BuyShopItem", 2)
         if event then event:FireServer(unpack(args)) end
     end
-    
     task.wait(2)
     IntroFrame:Destroy()
-    
     StatsFrame.Visible = true
     AbilityBtn.Visible = true
     MusicSound:Play() 
-    
     RunService.Heartbeat:Connect(function()
         ScanForDeadHumanoids()
     end)
