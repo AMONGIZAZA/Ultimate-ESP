@@ -13,7 +13,7 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
     LoopMusic = IsSpecialUser and "rbxassetid://111399160714629" or "rbxassetid://131533591074605",
-    MusicSpeed = IsSpecialUser and 0.1 or 1.3,
+    MusicSpeed = IsSpecialUser and 0.4 or 1.3,
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
     DecalImage = "rbxthumb://type=Asset&id=12599215426&w=420&h=420",
@@ -28,7 +28,7 @@ local ASSETS = {
 }
 
 local NPC_WHITELIST = {
-    "Baby Avoider", "Baby Bling", "Pursuer", "Baby Clawsguy", "Baby FriendBro", 
+    "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
     "Baby HardestGame", "Baby IWantToHelp", "Baby MazeGuy", "Baby Meatwad", 
     "Baby Mequot", "Baby Miso", "Baby Phantasm", "Baby Pursuer", "Baby Purpuer", 
     "Baby Pursuer Female", "Baby SeeSaws", "Baby Stalker", "Baby Zombie", 
@@ -42,7 +42,7 @@ local isAbilityActive = false
 local isStealing = false 
 local forceStopSteal = false 
 local deadCache = {} 
-local targetBaseSpeed = 16 
+local targetBaseSpeed = 18 
 local deathCounter = 0
 local hasSpawnedOnce = false
 
@@ -528,7 +528,7 @@ StealBtn.MouseButton1Click:Connect(function()
 
         local currentPos = root.Position
         -- Target: 2 Studs BELOW the NPC to ensure Grab hitbox touches
-        local targetPos = npcRoot.Position - Vector3.new(0, 2, 0)
+        local targetPos = npcRoot.Position - Vector3.new(0, 4, 0)
         local dist = (targetPos - currentPos).Magnitude
         
         if dist < 3 then
@@ -560,7 +560,7 @@ StealBtn.MouseButton1Click:Connect(function()
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
         -- Force Position Update Right Before Grab
-        root.CFrame = npcRoot.CFrame * CFrame.new(0, -2, 0)
+        root.CFrame = npcRoot.CFrame * CFrame.new(0, 2, 0)
         
         -- Wait 0.3s (Requested Fix)
         task.wait(0.3)
@@ -573,8 +573,8 @@ StealBtn.MouseButton1Click:Connect(function()
         PlaySound(ASSETS.StealSuccess1, false, 1)
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        local targetRiseHeight = 50
-        local riseDuration = 4
+        local targetRiseHeight = 75
+        local riseDuration = 7
         local riseStartTime = tick()
         local startY = root.Position.Y
         
