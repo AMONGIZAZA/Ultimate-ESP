@@ -13,7 +13,7 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
     LoopMusic = IsSpecialUser and "rbxassetid://111399160714629" or "rbxassetid://131533591074605",
-    MusicSpeed = IsSpecialUser and 0.1 or 1.3,
+    MusicSpeed = IsSpecialUser and 0.2 or 1.3,
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
     DecalImage = "rbxthumb://type=Asset&id=12599215426&w=420&h=420",
@@ -28,7 +28,7 @@ local ASSETS = {
 }
 
 local NPC_WHITELIST = {
-    "Baby Avoider", "Baby Bling", "Pursuer", "Baby Clawsguy", "Baby FriendBro", 
+    "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
     "Baby HardestGame", "Baby IWantToHelp", "Baby MazeGuy", "Baby Meatwad", 
     "Baby Mequot", "Baby Miso", "Baby Phantasm", "Baby Pursuer", "Baby Purpuer", 
     "Baby Pursuer Female", "Baby SeeSaws", "Baby Stalker", "Baby Zombie", 
@@ -561,7 +561,7 @@ StealBtn.MouseButton1Click:Connect(function()
             if forceStopSteal or hum.Health <= 0 then break end
             
             -- Teleport Under
-            root.CFrame = npcRoot.CFrame * CFrame.new(0, -2, 0)
+            root.CFrame = npcRoot.CFrame * CFrame.new(0, 1, 2)
             
             -- Spam Remote
             if grabEvent and hitBox then
@@ -591,7 +591,7 @@ StealBtn.MouseButton1Click:Connect(function()
         local headConn
         headConn = head.Touched:Connect(function()
             targetRiseHeight = targetRiseHeight + 15
-            riseDuration = riseDuration + 2
+            riseDuration = riseDuration + 1
         end)
         
         local rising = true
