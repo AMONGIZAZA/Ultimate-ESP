@@ -528,7 +528,7 @@ StealBtn.MouseButton1Click:Connect(function()
 
         local currentPos = root.Position
         -- Target: 2 Studs BELOW the NPC to ensure Grab hitbox touches
-        local targetPos = npcRoot.Position - Vector3.new(0, 4, 0)
+        local targetPos = npcRoot.Position - Vector3.new(0, 1.5, 2)
         local dist = (targetPos - currentPos).Magnitude
         
         if dist < 3 then
