@@ -13,7 +13,7 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
     LoopMusic = IsSpecialUser and "rbxassetid://111399160714629" or "rbxassetid://131533591074605",
-    MusicSpeed = IsSpecialUser and 0.2 or 1.3,
+    MusicSpeed = IsSpecialUser and 0.1 or 1.3,
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
     DecalImage = "rbxthumb://type=Asset&id=12599215426&w=420&h=420",
@@ -28,7 +28,7 @@ local ASSETS = {
 }
 
 local NPC_WHITELIST = {
-    "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
+    "Baby Avoider", "Baby Bling", "Pursuer", "Baby Clawsguy", "Baby FriendBro", 
     "Baby HardestGame", "Baby IWantToHelp", "Baby MazeGuy", "Baby Meatwad", 
     "Baby Mequot", "Baby Miso", "Baby Phantasm", "Baby Pursuer", "Baby Purpuer", 
     "Baby Pursuer Female", "Baby SeeSaws", "Baby Stalker", "Baby Zombie", 
@@ -48,7 +48,7 @@ local hasSpawnedOnce = false
 
 -- GUI Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay_FixedV8"
+ScreenGui.Name = "JusticeOverlay_FixedV9"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -418,7 +418,7 @@ AbilityBtn.MouseButton1Click:Connect(function()
     local cooldownDuration = 25
     if IsSpecialUser and deathCounter > 0 then
         slowSpeed = 10
-        cooldownDuration = 2.5
+        cooldownDuration = 5 -- Updated to 5 seconds
     end
     visionCooldownEnd = tick() + cooldownDuration
     local savedSpeed = targetBaseSpeed 
@@ -463,12 +463,11 @@ AbilityBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- // STEAL ABILITY LOGIC (FIXED) //
+-- // STEAL ABILITY LOGIC //
 
 local stealCooldownEnd = 0
 
 StealBtn.MouseButton1Click:Connect(function()
-    -- STRICT DEBOUNCE
     if isStealing then
         if StealBtn.Text == "STOP" then
             forceStopSteal = true 
@@ -527,7 +526,8 @@ StealBtn.MouseButton1Click:Connect(function()
         if forceStopSteal then break end
 
         local currentPos = root.Position
-        local targetPos = npcRoot.Position - Vector3.new(0, 2, 0)
+        -- TARGET: 0, 1.5, 2 (User Request)
+        local targetPos = npcRoot.Position + Vector3.new(0, 1.5, 2)
         local dist = (targetPos - currentPos).Magnitude
         
         if dist < 3 then
@@ -555,18 +555,25 @@ StealBtn.MouseButton1Click:Connect(function()
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
-        -- 2. LOCK & SPAM PHASE (1 Second)
+        -- 2. LOCK & WAIT PHASE (Delayed Fire)
         local lockStart = tick()
+        local hasFired = false
+        
         while (tick() - lockStart) < 1 do
             if forceStopSteal or hum.Health <= 0 then break end
             
-            -- Teleport Under
-            root.CFrame = npcRoot.CFrame * CFrame.new(0, 1, 2)
+            -- Lock Teleport (0, 1.5, 2)
+            root.CFrame = npcRoot.CFrame * CFrame.new(0, 1.5, 2)
             
-            -- Spam Remote
-            if grabEvent and hitBox then
-                grabEvent:FireServer("Grab", hitBox)
+            -- Wait 0.6s before firing remote
+            if (tick() - lockStart) >= 0.6 and not hasFired then
+                hasFired = true
+                if grabEvent and hitBox then
+                    grabEvent:FireServer("Grab", hitBox)
+                    grabEvent:FireServer("Grab", hitBox)
+                end
             end
+            
             RunService.Heartbeat:Wait()
         end
         
@@ -591,7 +598,7 @@ StealBtn.MouseButton1Click:Connect(function()
         local headConn
         headConn = head.Touched:Connect(function()
             targetRiseHeight = targetRiseHeight + 15
-            riseDuration = riseDuration + 1
+            riseDuration = riseDuration + 2
         end)
         
         local rising = true
@@ -622,7 +629,6 @@ StealBtn.MouseButton1Click:Connect(function()
             isAbilityActive = false
             StealBtn.Text = "STEAL"
             StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-            -- Only fly down if we are high up? No, user said stop breaks things. Just drop.
             return
         end
         
