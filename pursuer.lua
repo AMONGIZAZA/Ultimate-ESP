@@ -13,7 +13,7 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
     LoopMusic = IsSpecialUser and "rbxassetid://111399160714629" or "rbxassetid://131533591074605",
-    MusicSpeed = IsSpecialUser and 0.4 or 1.3,
+    MusicSpeed = IsSpecialUser and 0.1 or 1.3,
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
     DecalImage = "rbxthumb://type=Asset&id=12599215426&w=420&h=420",
@@ -28,7 +28,7 @@ local ASSETS = {
 }
 
 local NPC_WHITELIST = {
-    "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
+    "Baby Avoider", "Baby Bling", "Pursuer", "Baby Clawsguy", "Baby FriendBro", 
     "Baby HardestGame", "Baby IWantToHelp", "Baby MazeGuy", "Baby Meatwad", 
     "Baby Mequot", "Baby Miso", "Baby Phantasm", "Baby Pursuer", "Baby Purpuer", 
     "Baby Pursuer Female", "Baby SeeSaws", "Baby Stalker", "Baby Zombie", 
@@ -42,13 +42,13 @@ local isAbilityActive = false
 local isStealing = false 
 local forceStopSteal = false 
 local deadCache = {} 
-local targetBaseSpeed = 18 
+local targetBaseSpeed = 16 
 local deathCounter = 0
 local hasSpawnedOnce = false
 
 -- GUI Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay_FixedV7"
+ScreenGui.Name = "JusticeOverlay_FixedV8"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -468,12 +468,12 @@ end)
 local stealCooldownEnd = 0
 
 StealBtn.MouseButton1Click:Connect(function()
-    -- STRICT DEBOUNCE: Prevent double-clicking/void bug
+    -- STRICT DEBOUNCE
     if isStealing then
         if StealBtn.Text == "STOP" then
-            forceStopSteal = true -- Only allow clicking if we are trying to STOP
+            forceStopSteal = true 
         end
-        return -- Block everything else
+        return 
     end
 
     if tick() < stealCooldownEnd then return end
@@ -486,7 +486,7 @@ StealBtn.MouseButton1Click:Connect(function()
     if not root or not hum or not head then return end
     
     stealCooldownEnd = tick() + 20
-    isStealing = true -- Lock the button immediately
+    isStealing = true 
     isAbilityActive = true
     forceStopSteal = false
     
@@ -515,20 +515,19 @@ StealBtn.MouseButton1Click:Connect(function()
     local npcRoot = nearestNPC:FindFirstChild("HumanoidRootPart") or nearestNPC:FindFirstChild("Torso")
     root.Anchored = true
     
-    -- 1. SMOOTH TRACKING (Fly to NPC)
+    -- 1. TRACKING PHASE
     local stealStartTime = tick()
     local tracking = true
     
     while tracking and isStealing and hum.Health > 0 do
         if (tick() - stealStartTime) > 10 then
             StealBtn.Text = "STOP"
-            StealBtn.BackgroundColor3 = Color3.new(1, 0, 0) -- Turn Button Red
+            StealBtn.BackgroundColor3 = Color3.new(1, 0, 0) 
         end
         if forceStopSteal then break end
 
         local currentPos = root.Position
-        -- Target: 2 Studs BELOW the NPC to ensure Grab hitbox touches
-        local targetPos = npcRoot.Position - Vector3.new(0, 1.5, 2)
+        local targetPos = npcRoot.Position - Vector3.new(0, 2, 0)
         local dist = (targetPos - currentPos).Magnitude
         
         if dist < 3 then
@@ -545,11 +544,8 @@ StealBtn.MouseButton1Click:Connect(function()
         root.Anchored = false
         isStealing = false
         isAbilityActive = false
-        -- Reset Button Look
         StealBtn.Text = "STEAL"
         StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        TweenService:Create(root, TweenInfo.new(1), {CFrame = root.CFrame * CFrame.new(0, -50, 0)}):Play()
-        task.wait(1)
         return
     end
     
@@ -559,22 +555,36 @@ StealBtn.MouseButton1Click:Connect(function()
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
-        -- Force Position Update Right Before Grab
-        root.CFrame = npcRoot.CFrame * CFrame.new(0, 2, 0)
+        -- 2. LOCK & SPAM PHASE (1 Second)
+        local lockStart = tick()
+        while (tick() - lockStart) < 1 do
+            if forceStopSteal or hum.Health <= 0 then break end
+            
+            -- Teleport Under
+            root.CFrame = npcRoot.CFrame * CFrame.new(0, -2, 0)
+            
+            -- Spam Remote
+            if grabEvent and hitBox then
+                grabEvent:FireServer("Grab", hitBox)
+            end
+            RunService.Heartbeat:Wait()
+        end
         
-        -- Wait 0.3s (Requested Fix)
-        task.wait(0.3)
-        
-        if grabEvent and hitBox then
-            grabEvent:FireServer("Grab", hitBox)
-            grabEvent:FireServer("Grab", hitBox)
+        if forceStopSteal then
+             root.Anchored = false
+             isStealing = false
+             isAbilityActive = false
+             StealBtn.Text = "STEAL"
+             StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+             return
         end
         
         PlaySound(ASSETS.StealSuccess1, false, 1)
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        local targetRiseHeight = 75
-        local riseDuration = 7
+        -- 3. RISING PHASE
+        local targetRiseHeight = 50
+        local riseDuration = 4
         local riseStartTime = tick()
         local startY = root.Position.Y
         
@@ -601,27 +611,6 @@ StealBtn.MouseButton1Click:Connect(function()
                 root.CFrame = root.CFrame:Lerp(root.CFrame * CFrame.new(0, 1, 0), 0.2)
             end
             
-            if npcRoot then
-                local dist = (root.Position - npcRoot.Position).Magnitude
-                if dist > 20 then
-                    while (root.Position - (npcRoot.Position - Vector3.new(0, 2, 0))).Magnitude > 5 and isStealing and hum.Health > 0 do
-                        if forceStopSteal then break end
-                        root.CFrame = root.CFrame:Lerp(npcRoot.CFrame * CFrame.new(0, -2, 0), 0.2)
-                        RunService.Heartbeat:Wait()
-                    end
-                    
-                    if forceStopSteal then break end
-                    task.wait(0.3)
-                    
-                    if grabEvent and hitBox then
-                        grabEvent:FireServer("Grab", hitBox)
-                        grabEvent:FireServer("Grab", hitBox)
-                    end
-                    
-                    startY = root.Position.Y
-                    riseStartTime = tick() 
-                end
-            end
             RunService.Heartbeat:Wait()
         end
         
@@ -633,8 +622,7 @@ StealBtn.MouseButton1Click:Connect(function()
             isAbilityActive = false
             StealBtn.Text = "STEAL"
             StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-            TweenService:Create(root, TweenInfo.new(1), {CFrame = root.CFrame * CFrame.new(0, -50, 0)}):Play()
-            task.wait(1)
+            -- Only fly down if we are high up? No, user said stop breaks things. Just drop.
             return
         end
         
@@ -662,7 +650,6 @@ StealBtn.MouseButton1Click:Connect(function()
     
     isStealing = false
     isAbilityActive = false
-    -- Reset Button UI in case it was red
     StealBtn.Text = "STEAL"
     StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     
