@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Debris = game:GetService("Debris")
 
 local LocalPlayer = Players.LocalPlayer
@@ -12,8 +13,9 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
-    LoopMusic = IsSpecialUser and "rbxassetid://111399160714629" or "rbxassetid://131533591074605",
-    MusicSpeed = IsSpecialUser and 0.1 or 1.3,
+    LoopMusic = "rbxassetid://131533591074605",
+    MusicSpeed = 1.3,
+    
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
     DecalImage = "rbxthumb://type=Asset&id=12599215426&w=420&h=420",
@@ -22,9 +24,10 @@ local ASSETS = {
     SpawnSound = "rbxassetid://118419378021190",
     DeathSound1 = "rbxassetid://108241835492023",
     DeathSound2 = "rbxassetid://112303393444108",
-    StealSuccess1 = "rbxassetid://129215648504150",
-    StealSuccess2 = "rbxassetid://130287027440962",
-    StealFail = "rbxassetid://112756265911052"
+    StealActivate = "rbxassetid://129215648504150", 
+    StealSuccess2 = "rbxassetid://130287027440962", 
+    StealFail = "rbxassetid://112756265911052",
+    BtnImage = "rbxthumb://type=Asset&id=108404693479953&w=420&h=420"
 }
 
 local NPC_WHITELIST = {
@@ -46,9 +49,109 @@ local targetBaseSpeed = 16
 local deathCounter = 0
 local hasSpawnedOnce = false
 
--- GUI Setup
+-- Cooldown Timestamps
+local visionCooldownEnd = 0 
+local stealCooldownEnd = 0
+
+-- Noclip State
+local noclipConnection = nil
+
+-- // UTILITIES //
+
+local function PlaySound(id, looped, speed)
+    local s = Instance.new("Sound")
+    s.SoundId = id
+    s.Looped = looped or false
+    s.PlaybackSpeed = speed or 1
+    s.Parent = workspace 
+    s.Volume = 2
+    s.Name = "SFX"
+    s:Play()
+    if not looped then
+        Debris:AddItem(s, 10)
+    end
+    return s
+end
+
+local function EnableNoclip(enable)
+    if enable then
+        if noclipConnection then noclipConnection:Disconnect() end
+        noclipConnection = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConnection then 
+            noclipConnection:Disconnect() 
+            noclipConnection = nil
+        end
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end
+
+-- // PHASE 2 TRANSITION HELPER (Corrected Colors) //
+local function ActivatePhase2Effects(char)
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root and not root:FindFirstChild("Phase2Trail") then
+        local att1 = Instance.new("Attachment", root)
+        att1.Position = Vector3.new(0, 0.5, 0)
+        local att2 = Instance.new("Attachment", root)
+        att2.Position = Vector3.new(0, -0.5, 0)
+        local trail = Instance.new("Trail", root)
+        trail.Name = "Phase2Trail"
+        trail.Attachment0 = att1
+        trail.Attachment1 = att2
+        trail.Color = ColorSequence.new(Color3.fromRGB(0, 100, 255))
+        trail.Lifetime = 0.4
+        trail.WidthScale = NumberSequence.new(1, 0) 
+        trail.LightEmission = 0.5
+        trail.FaceCamera = true
+    end
+
+    local h = char:FindFirstChild("Highlight") 
+    if not h then 
+        h = Instance.new("Highlight", char) 
+    end
+    h.OutlineColor = Color3.new(0, 0, 1)
+    h.OutlineTransparency = 0
+    h.FillTransparency = 0.5
+    h.FillColor = Color3.fromRGB(0, 0, 255) -- Set initial blue
+    
+    -- Cyan/Blue Pulse
+    task.spawn(function()
+        local pulse = true
+        while h.Parent do
+            local targetColor = pulse and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(0, 0, 255)
+            TweenService:Create(h, TweenInfo.new(0.5), {FillColor = targetColor}):Play()
+            pulse = not pulse
+            task.wait(0.5)
+        end
+    end)
+
+    targetBaseSpeed = 24
+    local hum = char:FindFirstChild("Humanoid")
+    if hum then hum.WalkSpeed = 24 end
+end
+
+-- // GUI SETUP //
+
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay_FixedV9"
+ScreenGui.Name = "JusticeOverlay_V15"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -120,47 +223,127 @@ TotalKillLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 TotalKillLabel.TextSize = 14
 TotalKillLabel.Parent = StatsFrame
 
-local AbilityBtn = Instance.new("TextButton")
-AbilityBtn.Size = UDim2.new(0, 140, 0, 50)
-AbilityBtn.Position = UDim2.new(0.5, -145, 0.85, 0)
-AbilityBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-AbilityBtn.Text = "The Vision"
-AbilityBtn.Font = Enum.Font.GothamBlack
-AbilityBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AbilityBtn.TextSize = 18
-AbilityBtn.Visible = false
-AbilityBtn.AutoButtonColor = true
-AbilityBtn.Parent = ScreenGui
+-- // NEW UI //
+local NewUIContainer = Instance.new("Frame")
+NewUIContainer.Size = UDim2.new(1, 0, 1, 0)
+NewUIContainer.BackgroundTransparency = 1
+NewUIContainer.Visible = true 
+NewUIContainer.Parent = ScreenGui
 
-local BtnCorner = Instance.new("UICorner")
-BtnCorner.CornerRadius = UDim.new(0, 8)
-BtnCorner.Parent = AbilityBtn
+local NewVisionFrame = Instance.new("ImageButton")
+NewVisionFrame.Size = UDim2.new(0, 220, 0, 70)
+NewVisionFrame.Position = UDim2.new(0.5, -230, 0.78, 0)
+NewVisionFrame.BackgroundColor3 = Color3.new(1,1,1)
+NewVisionFrame.ImageTransparency = 1
+NewVisionFrame.AutoButtonColor = false
+NewVisionFrame.Parent = NewUIContainer
 
-local BtnStroke = Instance.new("UIStroke")
-BtnStroke.Color = Color3.fromRGB(255, 100, 0)
-BtnStroke.Thickness = 2
-BtnStroke.Parent = AbilityBtn
+local VisionStroke = Instance.new("UIStroke")
+VisionStroke.Thickness = 4
+VisionStroke.Color = Color3.fromRGB(255, 100, 0) 
+VisionStroke.Parent = NewVisionFrame
 
-local StealBtn = Instance.new("TextButton")
-StealBtn.Size = UDim2.new(0, 140, 0, 50)
-StealBtn.Position = UDim2.new(0.5, 5, 0.85, 0) 
-StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-StealBtn.Text = "STEAL"
-StealBtn.Font = Enum.Font.GothamBlack
-StealBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-StealBtn.TextSize = 18
-StealBtn.Visible = false 
-StealBtn.AutoButtonColor = true
-StealBtn.Parent = ScreenGui
+local VisionImage = Instance.new("ImageLabel")
+VisionImage.Size = UDim2.new(1, -4, 1, -4)
+VisionImage.Position = UDim2.new(0, 2, 0, 2)
+VisionImage.BackgroundTransparency = 1
+VisionImage.Image = ASSETS.BtnImage
+VisionImage.ScaleType = Enum.ScaleType.Crop
+VisionImage.Parent = NewVisionFrame
 
-local StealCorner = Instance.new("UICorner")
-StealCorner.CornerRadius = UDim.new(0, 8)
-StealCorner.Parent = StealBtn
+local VisionKey = Instance.new("TextLabel")
+VisionKey.Text = "Q / TAP"
+VisionKey.Size = UDim2.new(1, -10, 0, 20)
+VisionKey.Position = UDim2.new(0, 5, 0, 2)
+VisionKey.BackgroundTransparency = 1
+VisionKey.Font = Enum.Font.GothamBlack
+VisionKey.TextColor3 = Color3.new(1,1,1)
+VisionKey.TextStrokeTransparency = 0
+VisionKey.TextXAlignment = Enum.TextXAlignment.Left
+VisionKey.TextSize = 14
+VisionKey.Parent = NewVisionFrame
+
+local VisionTitle = Instance.new("TextLabel")
+VisionTitle.Text = "THE VISION"
+VisionTitle.Size = UDim2.new(1, -10, 0, 25)
+VisionTitle.Position = UDim2.new(0, 5, 1, -27)
+VisionTitle.BackgroundTransparency = 1
+VisionTitle.Font = Enum.Font.GothamBlack
+VisionTitle.TextColor3 = Color3.new(1,1,1)
+VisionTitle.TextStrokeTransparency = 0
+VisionTitle.TextXAlignment = Enum.TextXAlignment.Left
+VisionTitle.TextSize = 20
+VisionTitle.Parent = NewVisionFrame
+
+local VisionCD = Instance.new("TextLabel")
+VisionCD.Text = "5"
+VisionCD.Size = UDim2.new(1,0,1,0)
+VisionCD.BackgroundTransparency = 1
+VisionCD.Font = Enum.Font.GothamBlack
+VisionCD.TextColor3 = Color3.new(1,1,1)
+VisionCD.TextStrokeTransparency = 0
+VisionCD.TextSize = 30
+VisionCD.Visible = false
+VisionCD.ZIndex = 10
+VisionCD.Parent = NewVisionFrame
+
+local NewStealFrame = Instance.new("ImageButton")
+NewStealFrame.Size = UDim2.new(0, 220, 0, 70)
+NewStealFrame.Position = UDim2.new(0.5, 10, 0.78, 0) 
+NewStealFrame.BackgroundColor3 = Color3.new(1,1,1)
+NewStealFrame.ImageTransparency = 1
+NewStealFrame.Visible = false
+NewStealFrame.AutoButtonColor = false
+NewStealFrame.Parent = NewUIContainer
 
 local StealStroke = Instance.new("UIStroke")
-StealStroke.Color = Color3.fromRGB(255, 0, 0)
-StealStroke.Thickness = 2
-StealStroke.Parent = StealBtn
+StealStroke.Thickness = 4
+StealStroke.Color = Color3.fromRGB(0, 255, 255)
+StealStroke.Parent = NewStealFrame
+
+local StealImage = Instance.new("ImageLabel")
+StealImage.Size = UDim2.new(1, -4, 1, -4)
+StealImage.Position = UDim2.new(0, 2, 0, 2)
+StealImage.BackgroundTransparency = 1
+StealImage.Image = ASSETS.BtnImage
+StealImage.ScaleType = Enum.ScaleType.Crop
+StealImage.Parent = NewStealFrame
+
+local StealKey = Instance.new("TextLabel")
+StealKey.Text = "R / TAP"
+StealKey.Size = UDim2.new(1, -10, 0, 20)
+StealKey.Position = UDim2.new(0, 5, 0, 2)
+StealKey.BackgroundTransparency = 1
+StealKey.Font = Enum.Font.GothamBlack
+StealKey.TextColor3 = Color3.new(1,1,1)
+StealKey.TextStrokeTransparency = 0
+StealKey.TextXAlignment = Enum.TextXAlignment.Left
+StealKey.TextSize = 14
+StealKey.Parent = NewStealFrame
+
+local StealTitle = Instance.new("TextLabel")
+StealTitle.Text = "STEAL"
+StealTitle.Size = UDim2.new(1, -10, 0, 25)
+StealTitle.Position = UDim2.new(0, 5, 1, -27)
+StealTitle.BackgroundTransparency = 1
+StealTitle.Font = Enum.Font.GothamBlack
+StealTitle.TextColor3 = Color3.new(1,1,1)
+StealTitle.TextStrokeTransparency = 0
+StealTitle.TextXAlignment = Enum.TextXAlignment.Left
+StealTitle.TextSize = 20
+StealTitle.Parent = NewStealFrame
+
+local StealCD = Instance.new("TextLabel")
+StealCD.Text = "20"
+StealCD.Size = UDim2.new(1,0,1,0)
+StealCD.BackgroundTransparency = 1
+StealCD.Font = Enum.Font.GothamBlack
+StealCD.TextColor3 = Color3.new(1,1,1)
+StealCD.TextStrokeTransparency = 0
+StealCD.TextSize = 30
+StealCD.Visible = false
+StealCD.ZIndex = 10
+StealCD.Parent = NewStealFrame
 
 local EffectFrame = Instance.new("Frame")
 EffectFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -188,21 +371,6 @@ DecalOverlay.Image = ASSETS.DecalImage
 DecalOverlay.ScaleType = Enum.ScaleType.Crop
 DecalOverlay.Parent = EffectFrame
 
-local function PlaySound(id, looped, speed)
-    local s = Instance.new("Sound")
-    s.SoundId = id
-    s.Looped = looped or false
-    s.PlaybackSpeed = speed or 1
-    s.Parent = ScreenGui
-    s.Volume = 2
-    s.Name = "SFX"
-    s:Play()
-    if not looped then
-        Debris:AddItem(s, 10)
-    end
-    return s
-end
-
 local function ShakeScreen(intensity, duration)
     local startTime = tick()
     local conn
@@ -228,10 +396,9 @@ local function ShowBlood()
 end
 
 local function IsInWhitelist(npcName)
+    if not npcName then return false end
     for _, validName in pairs(NPC_WHITELIST) do
-        if string.find(npcName, validName) then
-            return true
-        end
+        if string.find(npcName, validName) then return true end
     end
     return false
 end
@@ -255,7 +422,51 @@ local function CreateBlueTrail(char)
     trail.FaceCamera = true
 end
 
--- Fallback Speed Check
+local function UpdateUI_Cooldown(isVision, timeLeft, isActive)
+    if isVision then
+        if isActive then
+            NewVisionFrame.BackgroundColor3 = Color3.fromRGB(100,100,100)
+            VisionStroke.Color = Color3.fromRGB(100,100,100)
+            VisionImage.ImageColor3 = Color3.fromRGB(100,100,100)
+            VisionTitle.TextColor3 = Color3.fromRGB(150,150,150)
+            VisionKey.TextColor3 = Color3.fromRGB(150,150,150)
+            VisionCD.Visible = true
+            VisionCD.Text = tostring(math.ceil(timeLeft))
+        else
+            NewVisionFrame.BackgroundColor3 = Color3.new(1,1,1)
+            VisionStroke.Color = Color3.fromRGB(255, 100, 0)
+            VisionImage.ImageColor3 = Color3.new(1,1,1)
+            VisionTitle.TextColor3 = Color3.new(1,1,1)
+            VisionKey.TextColor3 = Color3.new(1,1,1)
+            VisionCD.Visible = false
+        end
+    else
+        if isActive then
+            if StealTitle.Text == "STOP" then
+                NewStealFrame.BackgroundColor3 = Color3.new(1,0,0)
+                StealStroke.Color = Color3.new(1,0,0)
+                StealCD.Visible = false
+            else
+                NewStealFrame.BackgroundColor3 = Color3.fromRGB(100,100,100)
+                StealStroke.Color = Color3.fromRGB(100,100,100)
+                StealImage.ImageColor3 = Color3.fromRGB(100,100,100)
+                StealTitle.TextColor3 = Color3.fromRGB(150,150,150)
+                StealKey.TextColor3 = Color3.fromRGB(150,150,150)
+                StealCD.Visible = true
+                StealCD.Text = tostring(math.ceil(timeLeft))
+            end
+        else
+            NewStealFrame.BackgroundColor3 = Color3.new(1,1,1)
+            StealStroke.Color = Color3.fromRGB(0, 255, 255)
+            StealImage.ImageColor3 = Color3.new(1,1,1)
+            StealTitle.TextColor3 = Color3.new(1,1,1)
+            StealKey.TextColor3 = Color3.new(1,1,1)
+            StealCD.Visible = false
+            StealTitle.Text = "STEAL"
+        end
+    end
+end
+
 RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
     if char then
@@ -271,9 +482,17 @@ RunService.Heartbeat:Connect(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
+    -- RESET STATES
     isStealing = false 
     isAbilityActive = false
     forceStopSteal = false
+    EnableNoclip(false)
+    
+    -- RESET COOLDOWNS & UI
+    visionCooldownEnd = 0
+    stealCooldownEnd = 0
+    UpdateUI_Cooldown(true, 0, false)
+    UpdateUI_Cooldown(false, 0, false)
 
     if not IsSpecialUser then return end
     
@@ -293,16 +512,22 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 
     if deathCounter >= 1 then
-        StealBtn.Visible = true
-        StealBtn.Text = "STEAL"
-        StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        NewStealFrame.Visible = true
     end
 
     if deathCounter == 1 then
         PlaySound(ASSETS.DeathSound1, false, 1)
+        -- Phase 1 Generic Highlight Logic (if needed)
+        local h = Instance.new("Highlight", char)
+        h.OutlineColor = Color3.new(0, 0, 1)
+        h.FillTransparency = 1
+        targetBaseSpeed = 16 + 6.5
+        
     elseif deathCounter == 2 then
         PlaySound(ASSETS.DeathSound2, false, 1)
-        CreateBlueTrail(char) 
+        ActivatePhase2Effects(char) 
+        -- NOTE: ActivatePhase2Effects handles creation/colors of highlight.
+        -- We do NOT run generic creation here to avoid Bug 2.
     end
     
     local t1 = TweenService:Create(BlueOverlay, TweenInfo.new(0.5), {BackgroundTransparency = 0.45})
@@ -318,32 +543,10 @@ LocalPlayer.CharacterAdded:Connect(function(char)
         TweenService:Create(Camera, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {FieldOfView = originalFOV}):Play()
     end)
     
-    local h = Instance.new("Highlight")
-    h.Parent = char
-    h.OutlineColor = Color3.new(0, 0, 1)
-    h.OutlineTransparency = 0
-    
-    if deathCounter == 1 then
-        h.FillTransparency = 1
-        targetBaseSpeed = 16 + 6.5
-    elseif deathCounter == 2 then
-        h.FillTransparency = 0.5
-        task.spawn(function()
-            local pulse = true
-            while h.Parent do
-                local targetColor = pulse and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(0, 0, 255)
-                TweenService:Create(h, TweenInfo.new(0.5), {FillColor = targetColor}):Play()
-                pulse = not pulse
-                task.wait(0.5)
-            end
-        end)
-        targetBaseSpeed = 24
-    end
-    
     hum.WalkSpeed = targetBaseSpeed
 end)
 
-local function UpdateUI()
+local function UpdateUI_Kill()
     CurrentKillLabel.Text = tostring(killCount)
     TotalKillLabel.Text = "Total kills: " .. tostring(totalKills)
     local percent = math.clamp(killCount / 50, 0, 1)
@@ -361,7 +564,7 @@ end
 local function HandleKill(victimPosition)
     killCount = killCount + 1
     totalKills = totalKills + 1
-    UpdateUI()
+    UpdateUI_Kill()
     local myChar = LocalPlayer.Character
     if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
     local distance = (myChar.HumanoidRootPart.Position - victimPosition).Magnitude
@@ -407,24 +610,26 @@ local function ScanForDeadHumanoids()
     end
 end
 
-local visionCooldownEnd = 0 
-AbilityBtn.MouseButton1Click:Connect(function()
+local function ActivateVision()
     if tick() < visionCooldownEnd then return end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChild("Humanoid")
     if not hum then return end
+    
     isAbilityActive = true
     local slowSpeed = 6.5
     local cooldownDuration = 25
     if IsSpecialUser and deathCounter > 0 then
         slowSpeed = 10
-        cooldownDuration = 5 -- Updated to 5 seconds
+        cooldownDuration = 5 
     end
     visionCooldownEnd = tick() + cooldownDuration
     local savedSpeed = targetBaseSpeed 
+    
     TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = slowSpeed}):Play()
     ShowBlood()
     task.delay(0.6, function() PlaySound(ASSETS.AbilitySound, false, 1) end)
+    
     local highlights = {}
     for _, model in pairs(workspace:GetDescendants()) do
         if model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= char then
@@ -440,6 +645,7 @@ AbilityBtn.MouseButton1Click:Connect(function()
             end
         end
     end
+    
     task.wait(2)
     if hum then TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = savedSpeed}):Play() end
     task.wait(3) 
@@ -451,25 +657,20 @@ AbilityBtn.MouseButton1Click:Connect(function()
         end
     end
     isAbilityActive = false
+    
     task.spawn(function()
         while tick() < visionCooldownEnd do
-            local remaining = math.ceil(visionCooldownEnd - tick())
-            AbilityBtn.Text = tostring(remaining)
-            AbilityBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            local remaining = visionCooldownEnd - tick()
+            UpdateUI_Cooldown(true, remaining, true)
             task.wait(0.1)
         end
-        AbilityBtn.Text = "The Vision"
-        AbilityBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        UpdateUI_Cooldown(true, 0, false)
     end)
-end)
+end
 
--- // STEAL ABILITY LOGIC //
-
-local stealCooldownEnd = 0
-
-StealBtn.MouseButton1Click:Connect(function()
+local function ActivateSteal()
     if isStealing then
-        if StealBtn.Text == "STOP" then
+        if StealTitle.Text == "STOP" then
             forceStopSteal = true 
         end
         return 
@@ -481,9 +682,10 @@ StealBtn.MouseButton1Click:Connect(function()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChild("Humanoid")
     local head = char and char:FindFirstChild("Head")
-    
     if not root or not hum or not head then return end
     
+    PlaySound(ASSETS.StealActivate, false, 1)
+
     stealCooldownEnd = tick() + 20
     isStealing = true 
     isAbilityActive = true
@@ -491,7 +693,6 @@ StealBtn.MouseButton1Click:Connect(function()
     
     local nearestNPC = nil
     local nearestDist = math.huge
-    
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then
             local npcRoot = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
@@ -512,7 +713,9 @@ StealBtn.MouseButton1Click:Connect(function()
     end
     
     local npcRoot = nearestNPC:FindFirstChild("HumanoidRootPart") or nearestNPC:FindFirstChild("Torso")
-    root.Anchored = true
+    
+    EnableNoclip(true)
+    root.Anchored = false 
     
     -- 1. TRACKING PHASE
     local stealStartTime = tick()
@@ -520,32 +723,39 @@ StealBtn.MouseButton1Click:Connect(function()
     
     while tracking and isStealing and hum.Health > 0 do
         if (tick() - stealStartTime) > 10 then
-            StealBtn.Text = "STOP"
-            StealBtn.BackgroundColor3 = Color3.new(1, 0, 0) 
+            StealTitle.Text = "STOP"
+            UpdateUI_Cooldown(false, 0, true) 
+        else
+            local remaining = stealCooldownEnd - tick()
+            UpdateUI_Cooldown(false, remaining, true)
         end
+
         if forceStopSteal then break end
 
         local currentPos = root.Position
-        -- TARGET: 0, 1.5, 2 (User Request)
         local targetPos = npcRoot.Position + Vector3.new(0, 1.5, 2)
         local dist = (targetPos - currentPos).Magnitude
         
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+
         if dist < 3 then
             tracking = false
         else
             local direction = (targetPos - currentPos).Unit
             local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 3)
+            local lookAt = CFrame.lookAt(currentPos, Vector3.new(targetPos.X, currentPos.Y, targetPos.Z))
             root.CFrame = root.CFrame:Lerp(newCFrame, 0.2)
         end
         RunService.Heartbeat:Wait()
     end
     
     if forceStopSteal or hum.Health <= 0 then
-        root.Anchored = false
         isStealing = false
         isAbilityActive = false
-        StealBtn.Text = "STEAL"
-        StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        EnableNoclip(false)
+        StealTitle.Text = "STEAL"
+        UpdateUI_Cooldown(false, 0, false)
         return
     end
     
@@ -555,17 +765,21 @@ StealBtn.MouseButton1Click:Connect(function()
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
-        -- 2. LOCK & WAIT PHASE (Delayed Fire)
+        -- 2. LOCK & WAIT PHASE
         local lockStart = tick()
         local hasFired = false
         
         while (tick() - lockStart) < 1 do
             if forceStopSteal or hum.Health <= 0 then break end
             
-            -- Lock Teleport (0, 1.5, 2)
-            root.CFrame = npcRoot.CFrame * CFrame.new(0, 1.5, 2)
+            for _, p in pairs(nearestNPC:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
             
-            -- Wait 0.6s before firing remote
+            root.CFrame = npcRoot.CFrame * CFrame.new(0, 1.5, 2)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            
             if (tick() - lockStart) >= 0.6 and not hasFired then
                 hasFired = true
                 if grabEvent and hitBox then
@@ -573,25 +787,26 @@ StealBtn.MouseButton1Click:Connect(function()
                     grabEvent:FireServer("Grab", hitBox)
                 end
             end
-            
             RunService.Heartbeat:Wait()
         end
         
         if forceStopSteal then
-             root.Anchored = false
              isStealing = false
              isAbilityActive = false
-             StealBtn.Text = "STEAL"
-             StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+             EnableNoclip(false)
+             StealTitle.Text = "STEAL"
+             UpdateUI_Cooldown(false, 0, false)
              return
         end
         
-        PlaySound(ASSETS.StealSuccess1, false, 1)
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        -- 3. RISING PHASE
+        -- 3. RISING PHASE (5 Seconds total)
         local targetRiseHeight = 50
-        local riseDuration = 4
+        local riseDuration = 5 -- Total Fly Time
+        local dropTime = 4     -- Time to Drop NPC
+        local hasDropped = false
+
         local riseStartTime = tick()
         local startY = root.Position.Y
         
@@ -599,23 +814,47 @@ StealBtn.MouseButton1Click:Connect(function()
         headConn = head.Touched:Connect(function()
             targetRiseHeight = targetRiseHeight + 15
             riseDuration = riseDuration + 2
+            dropTime = dropTime + 2
         end)
         
         local rising = true
         while rising and isStealing and hum.Health > 0 do
             if (tick() - stealStartTime) > 10 then
-                StealBtn.Text = "STOP"
-                StealBtn.BackgroundColor3 = Color3.new(1, 0, 0)
+                StealTitle.Text = "STOP"
+                UpdateUI_Cooldown(false, 0, true)
             end
             if forceStopSteal then break end
+            
+            for _, p in pairs(nearestNPC:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
 
             local elapsed = tick() - riseStartTime
+            
+            -- AUTO DROP LOGIC
+            if elapsed >= dropTime and not hasDropped then
+                hasDropped = true
+                if grabEvent then
+                    grabEvent:FireServer("Drop")
+                    grabEvent:FireServer("Drop")
+                end
+            end
+
             if elapsed >= riseDuration then rising = false end
             
             local currentHeight = root.Position.Y - startY
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            
+            -- Only rise if not dropped? Or keep hovering? 
+            -- User said: "Fly 5 seconds... after 4 seconds then drop". 
+            -- This implies continued flight.
             
             if currentHeight < targetRiseHeight then
                 root.CFrame = root.CFrame:Lerp(root.CFrame * CFrame.new(0, 1, 0), 0.2)
+            else
+                 -- Hover in place if reached height but time not up
+                 root.CFrame = root.CFrame:Lerp(root.CFrame, 1) 
             end
             
             RunService.Heartbeat:Wait()
@@ -623,52 +862,50 @@ StealBtn.MouseButton1Click:Connect(function()
         
         if headConn then headConn:Disconnect() end
         
-        if forceStopSteal or hum.Health <= 0 then
-            root.Anchored = false
-            isStealing = false
-            isAbilityActive = false
-            StealBtn.Text = "STEAL"
-            StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-            return
+        if not hasDropped then -- Just in case loop broke early
+             if grabEvent then
+                 grabEvent:FireServer("Drop")
+                 grabEvent:FireServer("Drop")
+             end
         end
+
+        -- FALL NATURAL
+        task.wait(0.1)
+        EnableNoclip(false)
+        root.AssemblyLinearVelocity = Vector3.zero
         
-        task.wait(0.5)
-        
-        if grabEvent then
-            grabEvent:FireServer("Drop")
-            grabEvent:FireServer("Drop")
-        end
-        
-        task.wait(2)
-        
-        local fallTween = TweenService:Create(root, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {CFrame = root.CFrame * CFrame.new(0, -50, 0)})
-        fallTween:Play()
-        fallTween.Completed:Wait()
-        
-        root.Anchored = false
     else
         PlaySound(ASSETS.StealFail, false, 1)
-        root.Anchored = false
-        hum.Sit = true
-        task.wait(3)
-        hum.Sit = false
+        
+        if deathCounter < 2 then
+            deathCounter = 2
+            ActivatePhase2Effects(char)
+        end
     end
     
+    EnableNoclip(false)
     isStealing = false
     isAbilityActive = false
-    StealBtn.Text = "STEAL"
-    StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    StealTitle.Text = "STEAL"
+    UpdateUI_Cooldown(false, 0, false)
     
     task.spawn(function()
         while tick() < stealCooldownEnd do
-            local remaining = math.ceil(stealCooldownEnd - tick())
-            StealBtn.Text = tostring(remaining)
-            StealBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            local remaining = stealCooldownEnd - tick()
+            UpdateUI_Cooldown(false, remaining, true)
             task.wait(0.1)
         end
-        StealBtn.Text = "STEAL"
-        StealBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        UpdateUI_Cooldown(false, 0, false)
     end)
+end
+
+NewVisionFrame.MouseButton1Click:Connect(ActivateVision)
+NewStealFrame.MouseButton1Click:Connect(ActivateSteal)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q then ActivateVision() end
+    if input.KeyCode == Enum.KeyCode.R and IsSpecialUser and deathCounter >= 1 then ActivateSteal() end
 end)
 
 task.spawn(function()
@@ -703,7 +940,6 @@ task.spawn(function()
     task.wait(2)
     IntroFrame:Destroy()
     StatsFrame.Visible = true
-    AbilityBtn.Visible = true
     MusicSound:Play() 
     RunService.Heartbeat:Connect(function()
         ScanForDeadHumanoids()
