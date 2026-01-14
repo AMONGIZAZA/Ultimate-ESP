@@ -31,14 +31,13 @@ local ASSETS = {
 }
 
 local NPC_WHITELIST = {
-    "Baby Avoider", "Baby Bling", "Pursuer", "Baby Clawsguy", "Baby FriendBro", 
+    "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
     "Baby HardestGame", "Baby IWantToHelp", "Baby MazeGuy", "Baby Meatwad", 
     "Baby Mequot", "Baby Miso", "Baby Phantasm", "Baby Pursuer", "Baby Purpuer", 
     "Baby Pursuer Female", "Baby SeeSaws", "Baby Stalker", "Baby Zombie", 
     "Baby Zombie_1", "Baby Zombie_2", "DREAM"
 }
 
--- Global State
 local killCount = 0
 local totalKills = 0
 local isAbilityActive = false 
@@ -49,14 +48,11 @@ local targetBaseSpeed = 16
 local deathCounter = 0
 local hasSpawnedOnce = false
 
--- Cooldown Timestamps
 local visionCooldownEnd = 0 
 local stealCooldownEnd = 0
 
--- Noclip State
 local noclipConnection = nil
 
--- // UTILITIES //
 
 local function PlaySound(id, looped, speed)
     local s = Instance.new("Sound")
@@ -102,7 +98,6 @@ local function EnableNoclip(enable)
     end
 end
 
--- // PHASE 2 TRANSITION HELPER (Corrected Colors) //
 local function ActivatePhase2Effects(char)
     if not char then return end
     
@@ -130,9 +125,8 @@ local function ActivatePhase2Effects(char)
     h.OutlineColor = Color3.new(0, 0, 1)
     h.OutlineTransparency = 0
     h.FillTransparency = 0.5
-    h.FillColor = Color3.fromRGB(0, 0, 255) -- Set initial blue
+    h.FillColor = Color3.fromRGB(0, 0, 255)
     
-    -- Cyan/Blue Pulse
     task.spawn(function()
         local pulse = true
         while h.Parent do
@@ -148,7 +142,6 @@ local function ActivatePhase2Effects(char)
     if hum then hum.WalkSpeed = 24 end
 end
 
--- // GUI SETUP //
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "JusticeOverlay_V15"
@@ -223,7 +216,6 @@ TotalKillLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 TotalKillLabel.TextSize = 14
 TotalKillLabel.Parent = StatsFrame
 
--- // NEW UI //
 local NewUIContainer = Instance.new("Frame")
 NewUIContainer.Size = UDim2.new(1, 0, 1, 0)
 NewUIContainer.BackgroundTransparency = 1
@@ -482,13 +474,11 @@ RunService.Heartbeat:Connect(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
-    -- RESET STATES
     isStealing = false 
     isAbilityActive = false
     forceStopSteal = false
     EnableNoclip(false)
     
-    -- RESET COOLDOWNS & UI
     visionCooldownEnd = 0
     stealCooldownEnd = 0
     UpdateUI_Cooldown(true, 0, false)
@@ -517,7 +507,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 
     if deathCounter == 1 then
         PlaySound(ASSETS.DeathSound1, false, 1)
-        -- Phase 1 Generic Highlight Logic (if needed)
         local h = Instance.new("Highlight", char)
         h.OutlineColor = Color3.new(0, 0, 1)
         h.FillTransparency = 1
@@ -526,8 +515,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     elseif deathCounter == 2 then
         PlaySound(ASSETS.DeathSound2, false, 1)
         ActivatePhase2Effects(char) 
-        -- NOTE: ActivatePhase2Effects handles creation/colors of highlight.
-        -- We do NOT run generic creation here to avoid Bug 2.
     end
     
     local t1 = TweenService:Create(BlueOverlay, TweenInfo.new(0.5), {BackgroundTransparency = 0.45})
@@ -683,6 +670,8 @@ local function ActivateSteal()
     local hum = char and char:FindFirstChild("Humanoid")
     local head = char and char:FindFirstChild("Head")
     if not root or not hum or not head then return end
+
+    local originPosition = root.Position
     
     PlaySound(ASSETS.StealActivate, false, 1)
 
@@ -717,7 +706,7 @@ local function ActivateSteal()
     EnableNoclip(true)
     root.Anchored = false 
     
-    -- 1. TRACKING PHASE
+    
     local stealStartTime = tick()
     local tracking = true
     
@@ -743,7 +732,10 @@ local function ActivateSteal()
             tracking = false
         else
             local direction = (targetPos - currentPos).Unit
+            
+            
             local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 6)
+            
             local lookAt = CFrame.lookAt(currentPos, Vector3.new(targetPos.X, currentPos.Y, targetPos.Z))
             root.CFrame = root.CFrame:Lerp(newCFrame, 0.2)
         end
@@ -765,7 +757,7 @@ local function ActivateSteal()
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
-        -- 2. LOCK & WAIT PHASE
+        
         local lockStart = tick()
         local hasFired = false
         
@@ -801,10 +793,10 @@ local function ActivateSteal()
         
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        -- 3. RISING PHASE (5 Seconds total)
+        
         local targetRiseHeight = 50
-        local riseDuration = 5 -- Total Fly Time
-        local dropTime = 4     -- Time to Drop NPC
+        local riseDuration = 6 
+        local dropTime = 4     
         local hasDropped = false
 
         local riseStartTime = tick()
@@ -831,7 +823,7 @@ local function ActivateSteal()
 
             local elapsed = tick() - riseStartTime
             
-            -- AUTO DROP LOGIC
+            
             if elapsed >= dropTime and not hasDropped then
                 hasDropped = true
                 if grabEvent then
@@ -846,14 +838,10 @@ local function ActivateSteal()
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
             
-            -- Only rise if not dropped? Or keep hovering? 
-            -- User said: "Fly 5 seconds... after 4 seconds then drop". 
-            -- This implies continued flight.
-            
             if currentHeight < targetRiseHeight then
                 root.CFrame = root.CFrame:Lerp(root.CFrame * CFrame.new(0, 1, 0), 0.2)
             else
-                 -- Hover in place if reached height but time not up
+                 
                  root.CFrame = root.CFrame:Lerp(root.CFrame, 1) 
             end
             
@@ -869,10 +857,44 @@ local function ActivateSteal()
              end
         end
 
-        -- FALL NATURAL
+        
         task.wait(0.1)
-        EnableNoclip(false)
         root.AssemblyLinearVelocity = Vector3.zero
+        
+        
+        local returning = true
+        local returnSpeed = 6 
+        
+        while returning and isStealing and hum.Health > 0 do
+             if forceStopSteal then break end
+             
+             local currentPos = root.Position
+             local dist = (originPosition - currentPos).Magnitude
+             
+             
+             local npcLookPos = nil
+             if nearestNPC and nearestNPC:FindFirstChild("HumanoidRootPart") then
+                 npcLookPos = nearestNPC.HumanoidRootPart.Position
+             else
+                 
+                 npcLookPos = Vector3.new(currentPos.X, currentPos.Y - 20, currentPos.Z)
+             end
+
+             if dist < 3 then
+                 returning = false
+             else
+                 local direction = (originPosition - currentPos).Unit
+                 local newPos = currentPos + (direction * returnSpeed)
+                 
+                 
+                 local lookCFrame = CFrame.lookAt(newPos, Vector3.new(npcLookPos.X, newPos.Y, npcLookPos.Z))
+                 
+                 root.AssemblyLinearVelocity = Vector3.zero
+                 root.AssemblyAngularVelocity = Vector3.zero
+                 root.CFrame = root.CFrame:Lerp(lookCFrame, 0.2)
+             end
+             RunService.Heartbeat:Wait()
+        end
         
     else
         PlaySound(ASSETS.StealFail, false, 1)
