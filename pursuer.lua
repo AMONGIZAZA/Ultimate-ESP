@@ -743,7 +743,7 @@ local function ActivateSteal()
             tracking = false
         else
             local direction = (targetPos - currentPos).Unit
-            local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 3)
+            local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 6)
             local lookAt = CFrame.lookAt(currentPos, Vector3.new(targetPos.X, currentPos.Y, targetPos.Z))
             root.CFrame = root.CFrame:Lerp(newCFrame, 0.2)
         end
