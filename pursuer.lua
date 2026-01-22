@@ -13,8 +13,9 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
-    LoopMusic = "rbxassetid://131533591074605",
-    MusicSpeed = 1.3,
+    LoopMusic = "rbxassetid://77553637552266",
+    Phase2Music = "rbxassetid://131177086142186", 
+    MusicSpeed = 1, 
     
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
@@ -38,6 +39,7 @@ local NPC_WHITELIST = {
     "Baby Zombie_1", "Baby Zombie_2", "DREAM"
 }
 
+-- Global State
 local killCount = 0
 local totalKills = 0
 local isAbilityActive = false 
@@ -48,11 +50,14 @@ local targetBaseSpeed = 16
 local deathCounter = 0
 local hasSpawnedOnce = false
 
+-- Cooldown Timestamps
 local visionCooldownEnd = 0 
 local stealCooldownEnd = 0
 
+-- Noclip State
 local noclipConnection = nil
 
+-- // UTILITIES //
 
 local function PlaySound(id, looped, speed)
     local s = Instance.new("Sound")
@@ -98,6 +103,7 @@ local function EnableNoclip(enable)
     end
 end
 
+-- // PHASE 2 TRANSITION HELPER //
 local function ActivatePhase2Effects(char)
     if not char then return end
     
@@ -125,7 +131,7 @@ local function ActivatePhase2Effects(char)
     h.OutlineColor = Color3.new(0, 0, 1)
     h.OutlineTransparency = 0
     h.FillTransparency = 0.5
-    h.FillColor = Color3.fromRGB(0, 0, 255)
+    h.FillColor = Color3.fromRGB(0, 0, 255) 
     
     task.spawn(function()
         local pulse = true
@@ -142,9 +148,10 @@ local function ActivatePhase2Effects(char)
     if hum then hum.WalkSpeed = 24 end
 end
 
+-- // GUI SETUP //
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay_V15"
+ScreenGui.Name = "JusticeOverlay_V20"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -216,6 +223,7 @@ TotalKillLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 TotalKillLabel.TextSize = 14
 TotalKillLabel.Parent = StatsFrame
 
+-- // NEW UI //
 local NewUIContainer = Instance.new("Frame")
 NewUIContainer.Size = UDim2.new(1, 0, 1, 0)
 NewUIContainer.BackgroundTransparency = 1
@@ -395,25 +403,6 @@ local function IsInWhitelist(npcName)
     return false
 end
 
-local function CreateBlueTrail(char)
-    local root = char:WaitForChild("HumanoidRootPart")
-    local att1 = Instance.new("Attachment")
-    att1.Position = Vector3.new(0, 0.5, 0)
-    att1.Parent = root
-    local att2 = Instance.new("Attachment")
-    att2.Position = Vector3.new(0, -0.5, 0)
-    att2.Parent = root
-    local trail = Instance.new("Trail")
-    trail.Parent = root
-    trail.Attachment0 = att1
-    trail.Attachment1 = att2
-    trail.Color = ColorSequence.new(Color3.fromRGB(0, 100, 255))
-    trail.Lifetime = 0.4
-    trail.WidthScale = NumberSequence.new(1, 0) 
-    trail.LightEmission = 0.5
-    trail.FaceCamera = true
-end
-
 local function UpdateUI_Cooldown(isVision, timeLeft, isActive)
     if isVision then
         if isActive then
@@ -474,11 +463,13 @@ RunService.Heartbeat:Connect(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
+    -- RESET STATES
     isStealing = false 
     isAbilityActive = false
     forceStopSteal = false
     EnableNoclip(false)
     
+    -- RESET COOLDOWNS & UI
     visionCooldownEnd = 0
     stealCooldownEnd = 0
     UpdateUI_Cooldown(true, 0, false)
@@ -505,8 +496,15 @@ LocalPlayer.CharacterAdded:Connect(function(char)
         NewStealFrame.Visible = true
     end
 
+    -- AUDIO LOGIC
     if deathCounter == 1 then
         PlaySound(ASSETS.DeathSound1, false, 1)
+        -- CHANGE LOOP MUSIC TO PHASE 2 MUSIC
+        MusicSound:Stop()
+        MusicSound.SoundId = ASSETS.Phase2Music
+        MusicSound.PlaybackSpeed = 1 
+        MusicSound:Play()
+        
         local h = Instance.new("Highlight", char)
         h.OutlineColor = Color3.new(0, 0, 1)
         h.FillTransparency = 1
@@ -514,7 +512,9 @@ LocalPlayer.CharacterAdded:Connect(function(char)
         
     elseif deathCounter == 2 then
         PlaySound(ASSETS.DeathSound2, false, 1)
-        ActivatePhase2Effects(char) 
+        ActivatePhase2Effects(char)
+        -- SPEED UP MUSIC BY 1.1x
+        MusicSound.PlaybackSpeed = MusicSound.PlaybackSpeed * 1.1
     end
     
     local t1 = TweenService:Create(BlueOverlay, TweenInfo.new(0.5), {BackgroundTransparency = 0.45})
@@ -590,7 +590,6 @@ local function ScanForDeadHumanoids()
                         local dist = (v.RootPart.Position - myRoot.Position).Magnitude
                         if dist <= 100 then HandleKill(v.RootPart.Position) end
                     end
-                    task.delay(10, function() deadCache[v] = nil end)
                 end
             end
         end
@@ -611,38 +610,53 @@ local function ActivateVision()
         cooldownDuration = 5 
     end
     visionCooldownEnd = tick() + cooldownDuration
-    local savedSpeed = targetBaseSpeed 
     
-    TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = slowSpeed}):Play()
-    ShowBlood()
-    task.delay(0.6, function() PlaySound(ASSETS.AbilitySound, false, 1) end)
-    
-    local highlights = {}
-    for _, model in pairs(workspace:GetDescendants()) do
-        if model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= char then
-            if model.Humanoid.Health > 0 then
-                local h = Instance.new("Highlight")
-                h.FillColor = Color3.fromRGB(255, 100, 0)
-                h.OutlineColor = Color3.fromRGB(255, 255, 0)
-                h.FillTransparency = 1
-                h.OutlineTransparency = 1
-                h.Parent = model
-                table.insert(highlights, h)
-                TweenService:Create(h, TweenInfo.new(0.5), {FillTransparency = 0.5, OutlineTransparency = 0}):Play()
+    local success, err = pcall(function()
+        TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = slowSpeed}):Play()
+        ShowBlood()
+        task.delay(0.6, function() PlaySound(ASSETS.AbilitySound, false, 1) end)
+        
+        local highlights = {}
+        
+        for _, model in pairs(workspace:GetDescendants()) do
+            if model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= char then
+                if model.Humanoid.Health > 0 then
+                    local h = Instance.new("Highlight")
+                    h.FillColor = Color3.fromRGB(255, 100, 0)
+                    h.OutlineColor = Color3.fromRGB(255, 255, 0)
+                    h.FillTransparency = 1
+                    h.OutlineTransparency = 1
+                    
+                    -- FIX: Changed AlwaysOn to AlwaysOnTop
+                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop 
+                    
+                    h.Parent = model
+                    table.insert(highlights, h)
+                    TweenService:Create(h, TweenInfo.new(0.5), {FillTransparency = 0.5, OutlineTransparency = 0}):Play()
+                end
             end
         end
-    end
-    
-    task.wait(2)
-    if hum then TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = savedSpeed}):Play() end
-    task.wait(3) 
-    for _, h in pairs(highlights) do
-        if h.Parent then
-            local t = TweenService:Create(h, TweenInfo.new(0.5), {FillTransparency = 1, OutlineTransparency = 1})
-            t:Play()
-            t.Completed:Connect(function() h:Destroy() end)
+        
+        task.wait(2)
+        if hum then 
+            TweenService:Create(hum, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {WalkSpeed = targetBaseSpeed}):Play() 
         end
+        task.wait(3) 
+        
+        for _, h in pairs(highlights) do
+            if h.Parent then
+                local t = TweenService:Create(h, TweenInfo.new(0.5), {FillTransparency = 1, OutlineTransparency = 1})
+                t:Play()
+                t.Completed:Connect(function() h:Destroy() end)
+            end
+        end
+    end)
+    
+    if not success then
+        warn("Vision Ability Error:", err)
+        if hum then hum.WalkSpeed = targetBaseSpeed end
     end
+
     isAbilityActive = false
     
     task.spawn(function()
@@ -670,9 +684,9 @@ local function ActivateSteal()
     local hum = char and char:FindFirstChild("Humanoid")
     local head = char and char:FindFirstChild("Head")
     if not root or not hum or not head then return end
-
-    local originPosition = root.Position
     
+    local startOrigin = root.CFrame 
+
     PlaySound(ASSETS.StealActivate, false, 1)
 
     stealCooldownEnd = tick() + 20
@@ -706,7 +720,7 @@ local function ActivateSteal()
     EnableNoclip(true)
     root.Anchored = false 
     
-    
+    -- 1. TRACKING PHASE
     local stealStartTime = tick()
     local tracking = true
     
@@ -732,11 +746,7 @@ local function ActivateSteal()
             tracking = false
         else
             local direction = (targetPos - currentPos).Unit
-            
-            
             local newCFrame = CFrame.new(currentPos, targetPos) + (direction * 6)
-            
-            local lookAt = CFrame.lookAt(currentPos, Vector3.new(targetPos.X, currentPos.Y, targetPos.Z))
             root.CFrame = root.CFrame:Lerp(newCFrame, 0.2)
         end
         RunService.Heartbeat:Wait()
@@ -752,12 +762,13 @@ local function ActivateSteal()
     end
     
     local isValidTarget = IsInWhitelist(nearestNPC.Name)
-    
+    local grabLocation = npcRoot.Position 
+
     if isValidTarget then
         local grabEvent = ReplicatedStorage:WaitForChild("GrabEvent", 2)
         local hitBox = nearestNPC:FindFirstChild("Hitbox")
         
-        
+        -- 2. LOCK & WAIT PHASE
         local lockStart = tick()
         local hasFired = false
         
@@ -793,115 +804,109 @@ local function ActivateSteal()
         
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        
-        local targetRiseHeight = 50
-        local riseDuration = 6 
-        local dropTime = 4     
+        -- 3. RISING PHASE (Fly High with NPC) - UPDATED TO "TRACKING TYPE" FLIGHT
+        local riseStart = tick()
+        local riseDuration = 8 
         local hasDropped = false
 
-        local riseStartTime = tick()
-        local startY = root.Position.Y
-        
-        local headConn
-        headConn = head.Touched:Connect(function()
-            targetRiseHeight = targetRiseHeight + 15
-            riseDuration = riseDuration + 2
-            dropTime = dropTime + 2
-        end)
-        
         local rising = true
+        local speedRising = 4 
+        
         while rising and isStealing and hum.Health > 0 do
-            if (tick() - stealStartTime) > 10 then
-                StealTitle.Text = "STOP"
-                UpdateUI_Cooldown(false, 0, true)
-            end
+             if forceStopSteal then break end
+             
+             local elapsed = tick() - riseStart
+             if elapsed >= riseDuration then rising = false end
+             
+             for _, p in pairs(nearestNPC:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+             end
+             
+             -- DROP LOGIC: 1.5 seconds BEFORE rise ends
+             if elapsed >= (riseDuration - 1.5) and not hasDropped then
+                 hasDropped = true
+                 if grabEvent then
+                    grabEvent:FireServer("Drop")
+                    grabEvent:FireServer("Drop")
+                 end
+             end
+
+             -- MOVEMENT: Uses "Tracking" style Lerp logic but going UP
+             local currentPos = root.Position
+             -- Move 3 studs Up relative to current pos
+             local targetPos = currentPos + Vector3.new(0, speedRising, 0)
+             
+             -- Lerp for smoothness (Tracking feel)
+             root.CFrame = root.CFrame:Lerp(CFrame.new(targetPos) * root.CFrame.Rotation, 0.2)
+             
+             root.AssemblyLinearVelocity = Vector3.zero
+             root.AssemblyAngularVelocity = Vector3.zero
+             
+             RunService.Heartbeat:Wait()
+        end
+
+        if not hasDropped and grabEvent then
+            grabEvent:FireServer("Drop")
+            grabEvent:FireServer("Drop")
+        end
+        
+        -- 5. RETURN PHASE (Fly Back to Original Spot) - UPDATED TO "TRACKING TYPE" FLIGHT
+        local returnStart = tick()
+        local returning = true
+        local speedReturn = 8
+        
+        while returning and isStealing and hum.Health > 0 do
             if forceStopSteal then break end
             
-            for _, p in pairs(nearestNPC:GetDescendants()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
+            local currentPos = root.Position
+            local dist = (startOrigin.Position - currentPos).Magnitude
+            
+            if dist < 5 then
+                returning = false
             end
-
-            local elapsed = tick() - riseStartTime
             
+            -- Direction towards start
+            local direction = (startOrigin.Position - currentPos).Unit
             
-            if elapsed >= dropTime and not hasDropped then
-                hasDropped = true
-                if grabEvent then
-                    grabEvent:FireServer("Drop")
-                    grabEvent:FireServer("Drop")
-                end
-            end
-
-            if elapsed >= riseDuration then rising = false end
+            -- Look at grabLocation, but keep current Y for head rotation? 
+            -- User wants to "look at where you grabbed the NPC"
+            local lookAtPos = Vector3.new(grabLocation.X, currentPos.Y, grabLocation.Z)
             
-            local currentHeight = root.Position.Y - startY
+            -- Calculate target CFrame: Move towards start, Face the grab location
+            local targetPos = currentPos + (direction * speedReturn)
+            local targetCFrame = CFrame.lookAt(targetPos, lookAtPos)
+            
+            -- Apply Lerp
+            root.CFrame = root.CFrame:Lerp(targetCFrame, 0.2)
+            
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
             
-            if currentHeight < targetRiseHeight then
-                root.CFrame = root.CFrame:Lerp(root.CFrame * CFrame.new(0, 1, 0), 0.2)
-            else
-                 
-                 root.CFrame = root.CFrame:Lerp(root.CFrame, 1) 
-            end
-            
             RunService.Heartbeat:Wait()
         end
-        
-        if headConn then headConn:Disconnect() end
-        
-        if not hasDropped then -- Just in case loop broke early
-             if grabEvent then
-                 grabEvent:FireServer("Drop")
-                 grabEvent:FireServer("Drop")
-             end
-        end
 
-        
         task.wait(0.1)
+        EnableNoclip(false)
         root.AssemblyLinearVelocity = Vector3.zero
         
-        
-        local returning = true
-        local returnSpeed = 6 
-        
-        while returning and isStealing and hum.Health > 0 do
-             if forceStopSteal then break end
-             
-             local currentPos = root.Position
-             local dist = (originPosition - currentPos).Magnitude
-             
-             
-             local npcLookPos = nil
-             if nearestNPC and nearestNPC:FindFirstChild("HumanoidRootPart") then
-                 npcLookPos = nearestNPC.HumanoidRootPart.Position
-             else
-                 
-                 npcLookPos = Vector3.new(currentPos.X, currentPos.Y - 20, currentPos.Z)
-             end
-
-             if dist < 3 then
-                 returning = false
-             else
-                 local direction = (originPosition - currentPos).Unit
-                 local newPos = currentPos + (direction * returnSpeed)
-                 
-                 
-                 local lookCFrame = CFrame.lookAt(newPos, Vector3.new(npcLookPos.X, newPos.Y, npcLookPos.Z))
-                 
-                 root.AssemblyLinearVelocity = Vector3.zero
-                 root.AssemblyAngularVelocity = Vector3.zero
-                 root.CFrame = root.CFrame:Lerp(lookCFrame, 0.2)
-             end
-             RunService.Heartbeat:Wait()
+    else
+        -- SAFETY CHECK FOR NIL PLAY SOUND
+        if ASSETS and ASSETS.StealFail then
+             PlaySound(ASSETS.StealFail, false, 1)
         end
         
-    else
-        PlaySound(ASSETS.StealFail, false, 1)
-        
         if deathCounter < 2 then
+            -- FAIL STUN: SIT FOR 2 SECONDS
+            local oldSpeed = hum.WalkSpeed
+            hum.WalkSpeed = 0 
+            hum.Sit = true 
+            task.wait(2) 
+            hum.Sit = false
+            hum.WalkSpeed = oldSpeed
+            
             deathCounter = 2
             ActivatePhase2Effects(char)
+            MusicSound.PlaybackSpeed = MusicSound.PlaybackSpeed * 1.1
         end
     end
     
