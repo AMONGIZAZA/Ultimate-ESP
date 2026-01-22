@@ -806,7 +806,7 @@ local function ActivateSteal()
         
         -- 3. RISING PHASE (Fly High with NPC) - UPDATED TO "TRACKING TYPE" FLIGHT
         local riseStart = tick()
-        local riseDuration = 8 
+        local riseDuration = 6 
         local hasDropped = false
 
         local rising = true
