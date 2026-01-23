@@ -810,7 +810,7 @@ local function ActivateSteal()
         local hasDropped = false
 
         local rising = true
-        local speedRising = 4 
+        local speedRising = 3.5 
         
         while rising and isStealing and hum.Health > 0 do
              if forceStopSteal then break end
