@@ -13,9 +13,9 @@ local IsSpecialUser = (LocalPlayer.Name == "AmoGODUS_Minion" or LocalPlayer.Disp
 
 local ASSETS = {
     TypingSound = "rbxassetid://9116156872",
-    LoopMusic = "rbxassetid://77553637552266",
+    LoopMusic = "rbxassetid://131533591074605",
     Phase2Music = "rbxassetid://131177086142186", 
-    MusicSpeed = 1, 
+    MusicSpeed = 1.3, 
     
     AbilitySound = IsSpecialUser and "rbxassetid://76901928660559" or "rbxassetid://103698387056353",
     KillSoundMedium = "rbxassetid://8164951181",
@@ -28,8 +28,16 @@ local ASSETS = {
     StealActivate = "rbxassetid://129215648504150", 
     StealSuccess2 = "rbxassetid://130287027440962", 
     StealFail = "rbxassetid://112756265911052",
-    BtnImage = "rbxthumb://type=Asset&id=108404693479953&w=420&h=420"
+    BtnImage = "rbxthumb://type=Asset&id=108404693479953&w=420&h=420",
+    
+    AuraImage = "rbxthumb://type=Asset&id=14695315496&w=420&h=420"
 }
+
+-- // OVERRIDE MUSIC FOR "amongi" //
+if LocalPlayer.DisplayName == "amongi" then
+    ASSETS.LoopMusic = "rbxassetid://77553637552266"
+    ASSETS.MusicSpeed = 1
+end
 
 local NPC_WHITELIST = {
     "Baby Avoider", "Baby Bling", "Pursuer", "Baby ClawsGuy", "Baby FriendBro", 
@@ -103,6 +111,53 @@ local function EnableNoclip(enable)
     end
 end
 
+-- // AURA LOOP LOGIC //
+local function StartAuraLoop(char)
+    task.spawn(function()
+        while char.Parent and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 do
+            if deathCounter >= 1 then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local bb = Instance.new("BillboardGui")
+                    bb.Name = "AuraFX"
+                    bb.Adornee = root
+                    bb.AlwaysOnTop = true
+                    
+                    -- Phase 2 = Bigger Aura (12), Phase 1 = 8
+                    if deathCounter >= 2 then
+                        bb.Size = UDim2.new(12, 0, 12, 0)
+                    else
+                        bb.Size = UDim2.new(8, 0, 8, 0) -- CHANGED FROM 6 TO 8
+                    end
+                    
+                    bb.StudsOffset = Vector3.new(0, 0, 0)
+                    
+                    local img = Instance.new("ImageLabel")
+                    img.BackgroundTransparency = 1
+                    img.Image = ASSETS.AuraImage
+                    img.Size = UDim2.new(1,0,1,0)
+                    img.ImageColor3 = Color3.fromRGB(100, 150, 255) 
+                    img.Parent = bb
+                    
+                    bb.Parent = root
+                    
+                    -- Animate Fade Out AND Fly Up
+                    TweenService:Create(img, TweenInfo.new(1), {ImageTransparency = 1}):Play()
+                    
+                    -- NEW: Added StudsOffset to the tween so it flies up
+                    TweenService:Create(bb, TweenInfo.new(1), {
+                        Size = bb.Size + UDim2.new(2,0,2,0),
+                        StudsOffset = Vector3.new(0, 3, 0) -- Fly up by 3 studs
+                    }):Play()
+                    
+                    Debris:AddItem(bb, 1)
+                end
+            end
+            task.wait(0.2)
+        end
+    end)
+end
+
 -- // PHASE 2 TRANSITION HELPER //
 local function ActivatePhase2Effects(char)
     if not char then return end
@@ -151,7 +206,7 @@ end
 -- // GUI SETUP //
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "JusticeOverlay_V20"
+ScreenGui.Name = "JusticeOverlay_V23"
 ScreenGui.ResetOnSpawn = false 
 ScreenGui.Parent = PlayerGui
 
@@ -494,6 +549,8 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 
     if deathCounter >= 1 then
         NewStealFrame.Visible = true
+        -- START AURA LOOP
+        StartAuraLoop(char)
     end
 
     -- AUDIO LOGIC
@@ -627,7 +684,6 @@ local function ActivateVision()
                     h.FillTransparency = 1
                     h.OutlineTransparency = 1
                     
-                    -- FIX: Changed AlwaysOn to AlwaysOnTop
                     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop 
                     
                     h.Parent = model
@@ -804,13 +860,13 @@ local function ActivateSteal()
         
         PlaySound(ASSETS.StealSuccess2, false, 1)
         
-        -- 3. RISING PHASE (Fly High with NPC) - UPDATED TO "TRACKING TYPE" FLIGHT
+        -- 3. RISING PHASE (Fly High with NPC)
         local riseStart = tick()
-        local riseDuration = 6 
+        local riseDuration = 4 
         local hasDropped = false
 
         local rising = true
-        local speedRising = 3.5 
+        local speedRising = 3 
         
         while rising and isStealing and hum.Health > 0 do
              if forceStopSteal then break end
@@ -833,10 +889,7 @@ local function ActivateSteal()
 
              -- MOVEMENT: Uses "Tracking" style Lerp logic but going UP
              local currentPos = root.Position
-             -- Move 3 studs Up relative to current pos
              local targetPos = currentPos + Vector3.new(0, speedRising, 0)
-             
-             -- Lerp for smoothness (Tracking feel)
              root.CFrame = root.CFrame:Lerp(CFrame.new(targetPos) * root.CFrame.Rotation, 0.2)
              
              root.AssemblyLinearVelocity = Vector3.zero
@@ -850,10 +903,10 @@ local function ActivateSteal()
             grabEvent:FireServer("Drop")
         end
         
-        -- 5. RETURN PHASE (Fly Back to Original Spot) - UPDATED TO "TRACKING TYPE" FLIGHT
+        -- 5. RETURN PHASE (Fly Back to Original Spot)
         local returnStart = tick()
         local returning = true
-        local speedReturn = 8
+        local speedReturn = 6
         
         while returning and isStealing and hum.Health > 0 do
             if forceStopSteal then break end
@@ -868,11 +921,9 @@ local function ActivateSteal()
             -- Direction towards start
             local direction = (startOrigin.Position - currentPos).Unit
             
-            -- Look at grabLocation, but keep current Y for head rotation? 
-            -- User wants to "look at where you grabbed the NPC"
+            -- Look at grabLocation
             local lookAtPos = Vector3.new(grabLocation.X, currentPos.Y, grabLocation.Z)
             
-            -- Calculate target CFrame: Move towards start, Face the grab location
             local targetPos = currentPos + (direction * speedReturn)
             local targetCFrame = CFrame.lookAt(targetPos, lookAtPos)
             
@@ -896,7 +947,11 @@ local function ActivateSteal()
         end
         
         if deathCounter < 2 then
-            -- FAIL STUN: SIT FOR 2 SECONDS
+            -- FAIL STUN
+            EnableNoclip(false)
+            root.Anchored = false 
+            root.AssemblyLinearVelocity = Vector3.zero 
+
             local oldSpeed = hum.WalkSpeed
             hum.WalkSpeed = 0 
             hum.Sit = true 
